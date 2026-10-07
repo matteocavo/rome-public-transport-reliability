@@ -6,6 +6,14 @@ Un progetto end-to-end su Databricks che trasforma i feed del trasporto pubblico
 
 **Stato al 7 ottobre 2026:** sono implementati il percorso dall'acquisizione dei dati alle analisi Gold e la dashboard Databricks su cinque pagine. Persistence è la soluzione finale di regressione; Random Forest è il classificatore finale. La registrazione del modello è rinviata per un limite dell'ambiente. Rimane da riconciliare una differenza tra le definizioni di ritardo grave adottate da ML e dashboard, descritta di seguito.
 
+## Anteprima Dashboard
+
+<p align="center">
+  <img src="dashboard/databricks/screenshots/overview.png"
+       alt="Panoramica Esecutiva - Affidabilità del Trasporto Pubblico di Roma"
+       width="100%">
+</p>
+
 ## Problema di business
 
 Quanto ritardo è prevedibile alla fermata successiva? Qual è la probabilità di un ritardo grave? Quali linee, fermate e fasce orarie presentano i maggiori problemi di affidabilità?
@@ -197,6 +205,34 @@ Quando la fermata corrente è già classificata in ritardo grave, la frequenza d
 4. Monitoraggio Predittivo
 5. Prestazioni del Modello
 
+### Anteprime delle analisi
+
+La Panoramica Esecutiva è mostrata in apertura; qui seguono tre ulteriori pagine della dashboard.
+
+<p align="center">
+  <img src="dashboard/databricks/screenshots/propagation.png"
+       alt="Propagazione dei Ritardi"
+       width="100%">
+  <br>
+  <em>Propagazione dei Ritardi</em>
+</p>
+
+<p align="center">
+  <img src="dashboard/databricks/screenshots/predictive.png"
+       alt="Monitoraggio Predittivo"
+       width="100%">
+  <br>
+  <em>Monitoraggio Predittivo</em>
+</p>
+
+<p align="center">
+  <img src="dashboard/databricks/screenshots/model-performance.png"
+       alt="Prestazioni del Modello"
+       width="100%">
+  <br>
+  <em>Prestazioni del Modello</em>
+</p>
+
 L’interfaccia italiana è una scelta intenzionale, coerente con il contesto operativo della mobilità pubblica romana. Le fasce di rischio della presentazione finale sono Basso `p <= 0.30`, Medio `0.30 < p <= 0.50`, Alto `0.50 < p <= 0.70`, Critico `p > 0.70`. Sono distinte dal flag del classificatore, che usa strettamente 0.45, e richiedono riconciliazione con il campo di rischio Gold.
 
 La dashboard è pubblicata **all'interno di Databricks e richiede autenticazione**: non è accessibile anonimamente né costituisce una dashboard pubblica per recruiter. È un limite di distribuzione del portfolio. Il repository contiene l'[export JSON della dashboard](dashboard/databricks/dashboard/Affidabilita_Trasporto_Pubblico_Roma.lvdash.json) e il [PDF completo della dashboard](dashboard/databricks/pdf/Affidabilita_Trasporto_Pubblico_Roma.pdf), consultabile senza accedere a Databricks. Il PDF comprende le cinque pagine nell'ordine elencato sopra ed è un'esportazione statica, non una dashboard live. È pianificato un [livello di presentazione Power BI](dashboard/powerbi/README.md) separato.
@@ -212,6 +248,11 @@ dashboard/
       Affidabilita_Trasporto_Pubblico_Roma.lvdash.json
     pdf/
       Affidabilita_Trasporto_Pubblico_Roma.pdf
+    screenshots/
+      overview.png
+      propagation.png
+      predictive.png
+      model-performance.png
   powerbi/
     README.md
     report/
