@@ -111,7 +111,7 @@ Queste domande orientano l'analisi; le associazioni osservate non costituiscono 
 
 ---
 
-# 3. OBIETTIVI DI BUSINESS
+# 3. OBIETTIVI DEL PROGETTO
 
 Il sistema analitico affronta i seguenti obiettivi:
 
