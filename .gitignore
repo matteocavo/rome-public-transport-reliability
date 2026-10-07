@@ -1,0 +1,67 @@
+# Python and notebooks
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+
+# Local environment, credentials and editor settings
+.env
+.env.*
+!.env.example
+!.env.template
+.vscode/
+.idea/
+*.code-workspace
+.databrickscfg
+.databricks/
+.secrets/
+credentials.json
+credentials.local.*
+tokens.json
+*.pem
+*.key
+
+# Operating system files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Local raw feeds and generated datasets (retain documentation elsewhere in data/)
+/data/reference/gtfs_static/*
+/data/raw/
+/data/bronze/
+/data/silver/
+/data/gold/
+/data/processed/
+/data/generated/
+/data/cache/
+*.parquet
+*.orc
+*.avro
+_delta_log/
+
+# Temporary output and caches
+.cache/
+cache/
+tmp/
+temp/
+*.tmp
+*.temp
+*.log
+*.bak
+*~
+
+# Power BI binary exports and local state
+*.pbix
+*.pbit
+# PBIP/PBIR, semantic model definitions, screenshots and documentation remain versionable.
+**/.pbi/localSettings.json
+**/.pbi/cache.abf
+
+# Dashboard JSON exports, PDFs and portfolio images are intentionally not ignored.
