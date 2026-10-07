@@ -1,0 +1,95 @@
+name: Repository Quality Checks
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  quality-checks:
+    name: Quality checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Validate Python notebook syntax
+        run: python -m compileall -q notebooks
+
+      - name: Verify required SQL notebooks
+        run: |
+          set -u
+          missing=0
+          for f in notebooks/01_environment_setup.sql notebooks/99_realtime_pipeline_health_check.sql; do
+            if [ ! -f "$f" ]; then
+              echo "::error::Missing required SQL notebook: $f"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+          echo "Required SQL notebooks are present."
+
+      - name: Verify required deliverables are present
+        run: |
+          set -u
+          required_files=(
+            "README.md"
+            "docs/PACE.md"
+            "dashboard/databricks/dashboard/Affidabilita_Trasporto_Pubblico_Roma.lvdash.json"
+            "dashboard/databricks/pdf/Affidabilita_Trasporto_Pubblico_Roma.pdf"
+            "dashboard/databricks/screenshots/overview.png"
+            "dashboard/databricks/screenshots/propagation.png"
+            "dashboard/databricks/screenshots/predictive.png"
+            "dashboard/databricks/screenshots/model-performance.png"
+          )
+          missing=0
+          for f in "${required_files[@]}"; do
+            if [ ! -f "$f" ]; then
+              echo "::error::Missing required deliverable: $f"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "One or more required deliverables are missing. See errors above."
+            exit 1
+          fi
+          echo "All required deliverables are present."
+
+      - name: Forbidden-file sanity check
+        run: |
+          set -u
+          violations=0
+
+          check_pattern() {
+            local description="$1"
+            local pattern="$2"
+            local matches
+            matches=$(git ls-files | grep -E "$pattern" || true)
+            if [ -n "$matches" ]; then
+              echo "::error::Forbidden $description tracked in git:"
+              echo "$matches"
+              violations=1
+            fi
+          }
+
+          check_pattern ".env file" '(^|/)\.env$'
+          check_pattern "Power BI .pbix file" '\.pbix$'
+          check_pattern "Power BI .pbit file" '\.pbit$'
+          check_pattern "__pycache__ directory" '(^|/)__pycache__/'
+          check_pattern "compiled .pyc file" '\.pyc$'
+          check_pattern "local GTFS Static reference data" '^data/reference/gtfs_static/'
+
+          if [ "$violations" -ne 0 ]; then
+            echo "Forbidden files are tracked in git. See errors above."
+            exit 1
+          fi
+          echo "No forbidden files tracked in git."
