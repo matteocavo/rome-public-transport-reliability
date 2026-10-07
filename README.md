@@ -14,7 +14,7 @@ Un progetto end-to-end su Databricks che trasforma i feed del trasporto pubblico
        width="100%">
 </p>
 
-## Problema di business
+## Obiettivo del progetto
 
 Quanto ritardo è prevedibile alla fermata successiva? Qual è la probabilità di un ritardo grave? Quali linee, fermate e fasce orarie presentano i maggiori problemi di affidabilità?
 
