@@ -77,7 +77,7 @@ Il percorso è organizzato nelle quattro fasi PACE: pianificazione, analisi, cos
 
 # P — PIANIFICAZIONE
 
-## 2.1 Problema di business
+## 2.1 Obiettivo del progetto
 
 L'affidabilità del trasporto pubblico varia in funzione di linea, fermata, direzione, ora, giorno della settimana, traffico, ritardi precedenti, interruzioni e condizioni operative.
 
