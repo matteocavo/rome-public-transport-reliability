@@ -1,6 +1,8 @@
-# Common features and current scoring input (PR3)
+# Common features and inference export input (PR3)
 
-PR3 was deployed and validated in a separately authorized controlled rollout on 25 October 2026 from main `c343f1e8420a801bab98d22f298c939f4b8c0ae0`. Shared preparation passed Spark old/new parity; current input staging was created once and read back exactly. Existing MLflow runs, models, predictions, Gold and dashboard outputs are unchanged. Notebook 12 remains the historical refit/replay workflow; scoring-only artifacts belong to PR4. **The latest available Silver input is from 2 October, not a fresh live feed.**
+**Current architecture:** Databricks owns observable input preparation; the future FastAPI/sklearn backend owns operational model inference. [ADR-001](ARCHITECTURE_DECISIONS.md) supersedes the proposed Spark production path. [Training/inference export contracts](OPERATIONAL_ML_HANDOFF.md) preserve the ordered 47 features and identity without future labels. The historical 0.45 Spark probability threshold is not automatically the future backend threshold.
+
+PR3 was deployed and validated in a separately authorized controlled rollout on 25 October 2026 from main `c343f1e8420a801bab98d22f298c939f4b8c0ae0`. Shared preparation passed Spark old/new parity; input staging was created once and read back exactly. Existing MLflow runs, models, predictions, Gold and dashboard outputs are unchanged. Notebook 12 remains historical refit/replay; PR4's Spark persistence implementation is preserved as reference, not the operational target. **The latest available Silver input is from 2 October, not a fresh live feed.**
 
 ## Architecture and selection
 
@@ -19,7 +21,7 @@ Each row represents a reported trip-stop estimate observed at the feed epoch. `s
 
 The original vehicle `current_stop_sequence/current_status` and optional `vehicle_current_stop_id` remain distinct from the observation stop. No arbitrary single-stop-per-vehicle selection is introduced. Repeated stop IDs on a looping trip are permitted when stop sequences differ.
 
-The staging schema contains observation/vehicle/service identifiers, the five same-snapshot target identity fields, the ordered 47 raw model features and four lineage fields. Target identity fields are audit metadata, not assembled model features; no target delay, classification label, provisional outcome or label provenance is persisted. `SCORING_COLUMNS` is the explicit output allowlist. The legacy notebook 12 future-column guard is not reused for this new staging; PR4 must separate identifiers from raw model inputs explicitly.
+The staging schema contains observation/vehicle/service identifiers, the five same-snapshot target identity fields, the ordered 47 raw model features and four lineage fields. Target identity fields are audit metadata, not assembled model features; no target delay, classification label, provisional outcome or label provenance is persisted. `SCORING_COLUMNS` is the explicit output allowlist. The legacy notebook 12 future-column guard is not reused for staging; external inference must preserve this explicit separation of identity metadata from raw model inputs.
 
 ## Frozen feature contract
 
@@ -104,20 +106,20 @@ The following procedure was followed during the authorized rollout. Keep these s
 2. Read a pinned Silver version and compare old/new 08 preparation in memory on the same deterministic set of complete trip snapshots and past history. Compare all original output columns, types, counts and keys before any training feature overwrite. Do not trim history before deriving historical inputs. No unexplained difference is acceptable.
 3. Execute current preparation with staging writes disabled; verify the exact 47-feature order/hash, source epoch/version, row eligibility, missingness and current/next-stop identities. Require only known identifiers, not future delays or outcomes.
 4. If approved, enable the staging gate and create/overwrite only `rome_transport.features.next_stop_delay_scoring`. Verify Delta schema, counts, keys, no future/outcome columns and lineage. Keep the old staging version if replacing an existing table.
-5. Do not execute training, scoring, registration, Gold or dashboards. Do not wire a new Job/schedule in this PR. The existing notebook 12 still represents historical labeled replay; PR4 will provide the scoring-only artifact.
+5. Do not execute training, scoring, registration, Gold or dashboards. Do not wire a Job/schedule under this historical procedure. Notebook 12 represents labeled replay; independent operational inference belongs to the future external backend.
 
 
 ## Controlled runtime validation results
 
 ### Deployed notebooks and source baseline
 
-The runtime directory is `/Workspace/Users/matteo.cavo.data@gmail.com/Rome Public Transport Reliability & Delay Prediction/notebooks`. All three deployed sources were re-exported and matched main exactly, including the default disabled staging gate. The original runtime 08 was exported before replacement; its executable AST matched the pre-PR3 main baseline. Runtime 09–12 had only comment differences from main and were preserved byte-for-byte. They were not executed.
+The runtime directory is the existing project notebook folder. All three deployed sources were re-exported and matched main exactly, including the default disabled staging gate. The original runtime 08 was exported before replacement; its executable AST matched the pre-PR3 main baseline. Runtime 09–12 had only comment differences from main and were preserved byte-for-byte. They were not executed.
 
-| Notebook | Object ID | Action |
-| --- | --- | --- |
-| `08_common_feature_preparation` | 3410520310963567 | Created from main; relative `%run` verified in real Spark |
-| `08_feature_engineering` | 212980067827078 | Updated from main; full writing notebook not executed |
-| `08_current_scoring_dataset` | 3410520310963568 | Created from main; actual body validated with writes disabled and pinned Silver |
+| Notebook | Action |
+| --- | --- |
+| `08_common_feature_preparation` | Created from main; relative `%run` verified in real Spark |
+| `08_feature_engineering` | Updated from main; full writing notebook not executed |
+| `08_current_scoring_dataset` | Created from main; actual body validated with writes disabled and pinned Silver |
 
 One temporary validation notebook ran two unscheduled feature-only executions and was deleted after success. Its source, original 08 export, object/update metadata and structured reports were retained in the local operator evidence bundle. No production Job or schedule was modified.
 
@@ -125,7 +127,7 @@ Pinned source: `rome_transport.silver.realtime_enriched_observations` **v8**, 15
 
 ### Old/new training preparation parity
 
-[Read-only validation run 84499547661340](https://dbc-53d4ca74-894f.cloud.databricks.com/?o=7474647743124164#job/1102798544820869/run/84499547661340) completed with validation PASS. The legacy expressions came from the actual exported runtime 08; the new helper and actual main training adapter were executed only in memory.
+Read-only validation run 84499547661340 (runtime evidence retained privately) completed with validation PASS. The legacy expressions came from the actual exported runtime 08; the new helper and actual main training adapter were executed only in memory.
 
 The deterministic scope used routes **719, 314 and 46**, retaining **504,787 history observations across 919 epochs**. Comparisons used epochs **1790334480, 1790630629, 1790927629 and 1790928849**. After the original training eligibility filter: **2,648 old rows = 2,648 new rows**, **105 projected columns**, identical Spark schemas including metadata/nullability and **zero EXCEPT ALL differences in either direction**. This included keys, feature values and provisional audit fields.
 
@@ -135,7 +137,7 @@ Historical provenance guards passed in Spark. Independent strict-past joins on 2
 
 ### Current input staging and persistence
 
-The actual scoring notebook body ran against pinned Silver v8 with `ALLOW_STAGING_OVERWRITE=False`; it raised only the expected disabled-write gate after validation. Following acceptance of all read-only results, [write/read-back run 1103286384923896](https://dbc-53d4ca74-894f.cloud.databricks.com/?o=7474647743124164#job/1048168698800201/run/1103286384923896) explicitly enabled the gate in the isolated execution and made one controlled write. The deployed notebook default remains False.
+The actual scoring notebook body ran against pinned Silver v8 with `ALLOW_STAGING_OVERWRITE=False`; it raised only the expected disabled-write gate after validation. Following acceptance of all read-only results, write/read-back run 1103286384923896 (runtime evidence retained privately) explicitly enabled the gate in the isolated execution and made one controlled write. The deployed notebook default remains False.
 
 The staging did not exist before rollout. It now contains **24,797 rows**, **300 routes**, **1,313 trips**, **1,312 vehicles** and **6,740 observation stops**, all at epoch **1790928849**. An independent SQL window check reproduced the eligibility count, including **236 rows whose next represented stop had no arrival-delay estimate** and **55 sparse sequence transitions**. Thus no next-stop delay or future outcome was required.
 
@@ -216,4 +218,10 @@ Spark session timezone was explicitly **Europe/Rome**. Real rows at epoch 179092
 
 No rollback was needed. The original runtime 08 source and update metadata remain available in the evidence bundle; helper/scoring were new objects. The staging was new, with no prior version to restore. A future rollback must preserve evidence and avoid touching Silver or historical feature/label tables; no automatic DROP or RESTORE was performed.
 
-No model was loaded, fitted or transformed. No MLflow run or registration was created/modified, and notebooks 09–13 were not run. Gold, dashboards, Power BI, ingestion settings and the app repository were untouched. PR4 implementation can proceed against the validated input contract, with source freshness and high missingness remaining explicit limitations. This result does not claim current operational service or prediction quality.
+No model was loaded, fitted or transformed during PR3. No MLflow run or registration was created/modified, and notebooks 09–13 were not run. Gold, dashboards, Power BI, ingestion settings and the app repository were untouched. The validated input contract is reused for the external operational handoff; source freshness and high missingness remain limitations. This result does not claim current operational service or prediction quality.
+
+## Downstream freshness gap
+
+Read-only inventory on 25 October 2026 confirms a single scheduled Job with one task: notebook 05, every 10 minutes. It does not invoke 06, 07 or current-scoring preparation. Bronze Trip Updates advanced to epoch 1792960055; Silver observations/enrichment and staging remain at 1790928849. The staging overwrite gate remains OFF by default. No automatic downstream refresh is configured.
+
+The separately authorized next rollout must implement a version-pinned 05 -> 06 -> 07 -> `08_current_scoring_dataset` dependency chain, measure full-history costs, reconcile duplicate/source/timezone behavior and publish a validated readiness manifest before external inference. Do not schedule historical labeling/training on this cadence. See [freshness analysis and orchestration acceptance](OPERATIONAL_ML_HANDOFF.md#freshness-gap-and-internal-orchestration-design).

@@ -1,10 +1,20 @@
-# Persisted native classifier and scoring-only inference (PR4)
+# Model runtime: external operational target and historical Spark reference
 
-Repository implementation only. No PR4 fit, artifact logging, model registration, inference or table write has been executed. Historical notebook 12 remains unchanged for compatibility/evidence; do not run it to perform the new scoring-only workflow. Notebook 11 remains the frozen selection evidence. PR4 does not introduce prediction history or modify historical predictions, Gold, dashboards, ingestion or Jobs.
+**Operational ML: EXTERNAL PYTHON BACKEND TARGET.** FastAPI/Python/scikit-learn will own training, evaluation, complete fitted artifacts, loading and inference in the future `rome-mobility-intelligence` repository. No backend or model is implemented by this handoff PR. [ADR-001](ARCHITECTURE_DECISIONS.md), [data/access contract](OPERATIONAL_ML_HANDOFF.md), [roadmap](ROADMAP.md).
+
+**Spark ML: HISTORICAL / EXPERIMENTAL ML - RESEARCH / REFERENCE IMPLEMENTATION.** Notebook 11's frozen selection, historical notebook 12 and PR4 implementation/tests remain preserved. The technical sections below describe that historical/reference design only; they are not the production rollout plan. PR4 production fit, artifact persistence, native reload and scoring never ran. No prediction history, Gold, ingestion or Jobs changed.
+
+## Verified runtime decision, 25 October 2026
+
+Explicit `mlflow.set_tracking_uri("databricks")` and `mlflow.set_registry_uri("databricks-uc")` enabled experiment/run/parameter logging. Isolated Volume storage access passed. The fresh serialization smoke then failed at `VectorAssembler` construction with `Py4JSecurityException` on the Spark Connect constructor whitelist, before minimal fit or artifact creation. No production fit followed.
+
+One authorized classic 16.4 LTS ML CPU Dedicated compute request was rejected because the organization has no associated worker environments. No cluster was created or left active. The target therefore no longer depends on Spark persistence, paid classic compute or UC registration. Future sklearn algorithm/preprocessing/threshold choices require new evaluation; historical Spark settings are not a conversion specification.
+
+`historical_model_threshold = 0.45` (strict >); **future operational model threshold: to be validated from new model evaluation**. Historical TEST metrics below belong only to Spark/Persistence. Training v12 is validated; v8 remains the historical reference and is no longer readable under retention/VACUUM. No automatic version fallback or relabeling is authorized.
 
 ## Audit and architecture
 
-Historical run `a9b568f478344d9dba90436358f14092` has status `DEFERRED_SERVERLESS_LIMITATION`, no artifact URI and an encoded size of 475. A read-only metadata check confirmed the recorded MLflow error: an existing UC Volume path was required for SparkML save/log/load on shared/serverless compute. The old notebook attempted artifact logging and registration together, deferred the known failure and continued using the in-memory fitted pipeline. It therefore provided no independently reloadable artifact. This is not evidence that changing a path alone will make the whole persistence flow work; native serialization and reload still need controlled runtime validation.
+Historical run `a9b568f478344d9dba90436358f14092` has status `DEFERRED_SERVERLESS_LIMITATION`, no artifact URI and an encoded size of 475. A read-only metadata check confirmed the recorded MLflow error: an existing UC Volume path was required for SparkML save/log/load on shared/serverless compute. The old notebook attempted artifact logging and registration together, deferred the known failure and continued using the in-memory fitted pipeline. It therefore provided no independently reloadable artifact. Changing the path did not establish native persistence: the subsequent smoke stopped at Spark ML construction. This path is now reference-only.
 
 The preserved inference diagram is:
 
@@ -81,21 +91,18 @@ These values are not logged as achieved metrics of the new fit. Equal settings a
 
 The scoring path reads a single pinned staging version, verifies the exact raw feature order/types/hash, one preparation lineage and one feed epoch, and rejects label/outcome/prediction columns. Only documented next-stop identity fields may use the target_ prefix. Identity/service/vehicle fields pass through for output and are not assembled into the model vector. The output DataFrame contains the observation key, next-stop IDs, vehicle/service/start-time identity, P(class 1), strict flag, model_run_id, feature_contract_hash, decision_threshold, model_algorithm and scored_at, retaining the existing staging preparation lineage as well. Row count and identity multisets must be preserved, probabilities finite/in-range/summing to one, and vector size unchanged from the loaded artifact.
 
-All gates default OFF: ALLOW_MODEL_FIT, ALLOW_MODEL_PERSIST, ALLOW_UC_REGISTRATION, ALLOW_MODEL_INFERENCE and ALLOW_SCORING_WRITE. Fit requires both fit and persistence gates plus a pinned source and exact code commit before it begins. Existing active MLflow runs are rejected, preventing accidental writes into the historical run. Scoring has no writer even if its write flag is changed: PR5 owns permanent prediction history. The existing next_stop_delay_predictions table is not overwritten.
+All gates default OFF: ALLOW_MODEL_FIT, ALLOW_MODEL_PERSIST, ALLOW_UC_REGISTRATION, ALLOW_MODEL_INFERENCE and ALLOW_SCORING_WRITE. Fit requires both fit and persistence gates plus a pinned source and exact code commit before it begins. Existing active MLflow runs are rejected, preventing accidental writes into the historical run. Scoring has no writer even if its write flag is changed. The former Spark PR5 plan is superseded: permanent prediction history is roadmap step F after external model validation. The existing next_stop_delay_predictions table is not overwritten.
 
 **Latest scoring source is historical because Silver is currently stale.** PR3 staging was validated at Silver v8 / feed epoch 1790928849 (2 October 2026), with several optional inputs/categories about 75–79% NULL. The scorer reports feed age, does not manufacture freshness and does not call this live prediction. No new imputation or model-quality claim is justified by the input contract alone.
 
-## Local validation and separately authorized rollout
+## Local validation of the preserved reference implementation
 
 Offline tests use fake fitted stages/pipelines and execute actual loading/scoring definitions. They cover contract/hash/parameters, direct class order, strict threshold, identity preservation, new/NULL categories, storage propagation into load, mandatory persistence/reload, default gates, and no inference fit/labeled read/table writes. These are contract tests, not proof that Spark persistence or categorical vectors work on the target runtime.
 
-After merge, with separate authorization:
+The former Spark rollout plan required a serialization smoke before any full fit,
+then complete artifact persistence, native reload/parity, unknown/NULL category tests
+and independent inference, with UC registration optional. The actual attempt stopped
+at the first requirement. Its original implementation and prior documentation remain
+in Git history; this superseded plan is not an instruction to resume Spark deployment.
 
-1. Inspect compatible native Spark/MLflow capabilities, existing authorized storage and the historical missing artifact. Verify save/log/load with supported compute before spending a full-data fit. Do not modify jobs or create volumes automatically.
-2. Deploy both new callers, their shared helper and the unchanged PR3 feature contract. Keep default gates OFF. Pin and verify the labeled training version/population and supply the exact deployed Git SHA and deployment cutoff.
-3. Explicitly authorize one fit/persist run. Verify learned stages and dimension (report any difference from 475), persisted metadata, native reload and deterministic before/after probability equality. Review new in-sample diagnostics separately from frozen historical TEST metrics. If persistence or reload fails, stop without inference; no artifact or registry success is implied.
-4. Test native unknown route_id/agency_id/current_status and NULL-category cases against the reloaded pipeline, checking vector dimension, probabilities and identity. Validate boundary p=0.45 remains negative in the business rule.
-5. Independently authorize scoring-only against the pinned staging. Configure immutable MODEL_URI and load temp storage if needed; ensure no fit/logging call occurs and inspect the output DataFrame only. No predictions/Gold/history table write or pipeline scheduling is part of PR4.
-6. Optional UC registration may be attempted only after the artifact works independently. Record failures without discarding a valid artifact or switching inference to registry-only loading.
-
-No artifact has been produced or loaded by this repository-first PR. Runtime persistence, actual category encodings and round-trip prediction equality remain unverified until that controlled rollout.
+No production PR4 artifact has been produced or loaded. Spark category encodings and round-trip parity remain unverified on this workspace; no success is inferred from offline tests. Future production acceptance belongs to the external backend and the [new roadmap](ROADMAP.md), including newly evaluated thresholds and independently reloaded sklearn artifacts.

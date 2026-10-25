@@ -12,7 +12,19 @@
 
 ---
 
-## Quadro dell'implementazione — 7 ottobre 2026
+## Quadro dell'implementazione — 25 ottobre 2026
+
+**Decisione corrente:** [ADR-001](ARCHITECTURE_DECISIONS.md) separa Databricks (ingestion,
+lakehouse, feature/data contract, analytics, Gold e freshness) dal futuro FastAPI/sklearn
+(training, nuova valutazione, artifact e inference). n8n orchestrerà i confini esterni;
+React/Google AI Studio saranno il frontend. Spark ML è **HISTORICAL / EXPERIMENTAL ML**:
+si conservano risultati e codice, ma non è più il runtime production target.
+
+**Operativo oggi:** ingestion Bronze ogni 10 minuti. **Storico:** Silver, feature, scoring,
+Gold e valutazione Spark; staging validata al 2 ottobre. Il Job contiene solo 05:
+06-08 non sono dipendenze pianificate. [Contratti, misure e gap](OPERATIONAL_ML_HANDOFF.md).
+PDF/screenshot precedono questa decisione e presentano claim da correggere: il JSON locale
+è aggiornato, il rollout live e i nuovi export sono separati. [Audit](../dashboard/databricks/README.md).
 
 Il documento mantiene il framework PACE e le motivazioni progettuali, distinguendo ipotesi iniziali, decisioni implementate, risultati verificati ed estensioni future. I risultati riportati provengono dalle esecuzioni validate comunicate per il progetto; questa revisione documentale non riesegue i Job Databricks.
 
@@ -20,9 +32,9 @@ Il documento mantiene il framework PACE e le motivazioni progettuali, distinguen
 
 **Scostamenti dal piano iniziale:** Persistence è la soluzione finale di regressione, perché la maggiore complessità non ha prodotto un miglioramento sufficiente in validazione. La raccolta avviene ogni 10 minuti, anziché ogni cinque come proposto inizialmente. Gold utilizza tabelle analitiche compatte per snapshot, al posto dei nomi dimensionali ipotizzati.
 
-**Rinviata:** registrazione del modello in produzione, a causa del limite di serializzazione degli artefatti SparkML / Unity Catalog nell'ambiente Serverless corrente. Scoring e tracciamento degli esperimenti sono completati indipendentemente dalla registrazione.
+**Percorso production sostituito:** persistenza Spark ML. MLflow tracking funziona con URI espliciti, ma lo smoke nativo fallisce sulla whitelist Spark Connect; classic Dedicated ML compute non è disponibile nell'organization Free. Il futuro modello operativo sarà valutato e persistito nel backend esterno, senza dipendere dalla registrazione UC. Scoring e metriche Spark restano storici.
 
-**Contratto semantico corrente:** evento `next_stop_delay_ge_300s`, display “Ritardo ≥ 5 min”. La precedente descrizione >600 secondi e le fasce visuali 30/50/70 erano incoerenti con i valori Gold: il JSON corrente le corregge senza cambiare dati o modelli. La sezione 14 definisce il contratto. PDF e screenshot sono aggiornati dal nuovo export in tema chiaro.
+**Contratto semantico corrente:** evento `next_stop_delay_ge_300s`, display “Ritardo ≥ 5 min”, target >=300 secondi invariato. La soglia Spark storica è strettamente p>0.45; la soglia del futuro modello deve essere rivalidata. Il JSON locale include le correzioni architetturali; PDF e screenshot restano export storici in tema chiaro, con issue esplicitamente documentate nell'audit.
 
 **Distribuzione:** la dashboard pubblicata richiede autenticazione Databricks. L'export JSON e il PDF completo sono presenti nel repository. Una presentazione Power BI pubblica separata rimane futura. Il vincolo di accesso riguarda la distribuzione della dashboard interattiva, non il funzionamento dell'implementazione Databricks.
 
@@ -659,7 +671,7 @@ Il riaddestramento del notebook 12 sull'intero storico ammissibile serve al batc
 
 # 28. ARCHITETTURA DATABRICKS
 
-Il progetto implementa un'architettura Medallion. L'etichettatura futura si colloca tra preparazione delle feature e valutazione supervisionata. La registrazione non è un prerequisito per il percorso di scoring in memoria già completato.
+Il lakehouse Medallion mantiene ingestion, feature osservabili, etichette offline, analytics e Gold. Il target operativo separa il runtime del modello; il ciclo Spark interamente in Databricks resta storico. Diagramma target, non dichiarazione di componenti già distribuiti:
 
 ```text
 Sorgenti GTFS Static / GTFS-Realtime
@@ -670,11 +682,11 @@ Silver
         ↓
 Feature Engineering
         ↓
-Etichettatura futura
+Contratti versionati (label solo per training offline)
         ↓
-Modelli ML / valutazione
+FastAPI / sklearn: training, valutazione, artifact, inference
         ↓
-Previsioni batch
+Prediction history futura / serving
         ↓
 Gold
         ↓
@@ -683,7 +695,7 @@ Databricks SQL
 Databricks AI/BI Dashboards
 ```
 
-Le analisi descrittive e i risultati predittivi confluiscono in Gold con percorsi distinti, evitando di introdurre etichette future negli output operativi.
+Le analisi descrittive e i risultati predittivi mantengono percorsi distinti, senza label negli input inference. Databricks orchestra 05/06/07/08; n8n readiness/chiamate backend/retry/alert; React e Google AI Studio frontend/API. La catena downstream e il backend sono da implementare secondo la roadmap; questa PR non li esegue.
 
 ---
 
@@ -700,7 +712,7 @@ rome_transport
 └── gold
 ```
 
-Il nome previsto per la registrazione del classificatore è `rome_transport.ml.major_delay_classifier`, non il nome provvisorio iniziale `delay_prediction_model`. Non si dichiara una registrazione riuscita in produzione. Esperimenti MLflow e metadati Delta garantiscono tracciabilità mentre la registrazione degli artefatti resta rinviata; si veda la sezione 40.
+Il nome storico previsto per la registrazione Spark è `rome_transport.ml.major_delay_classifier`; nessuna registrazione riuscita è dichiarata. Esperimenti MLflow e metadati Delta conservano la ricerca. Il futuro artifact sklearn è responsabilità del backend e non dipende da questa destinazione UC; si veda ADR-001.
 
 ---
 
@@ -960,7 +972,7 @@ xgboost_v1
 
 ---
 
-**PR4 - pipeline persistita e inference separata (solo repository):** nuovi percorsi `12a_fit_persist_final_classifier` e `12b_score_current_input`, con helper condiviso, artifact MLflow Spark completo e caricamento obbligatoriamente verificato. Inference solo tramite `transform()`, senza refit o lettura del labeled dataset. Contratto 47 feature, RF e soglia stretta >0.45 invariati; gate runtime OFF, UC registration opzionale e nessuna scrittura prediction. Persistenza/load reali richiedono rollout autorizzato; la sorgente scoring resta storica perché Silver è stale. [Artifact, metadata, metriche e rollout](MODEL_SERVING.md).
+**PR4 - implementazione Spark di riferimento:** helper e notebook 12a/12b conservano il disegno di persistenza/inference separata, con gate OFF e test offline. Il rollout ha confermato tracking MLflow ma non ha superato lo smoke Spark ML; il compute Dedicated non è disponibile. Nessun artifact production persistito o ricaricato. Il percorso operativo è ora esterno. [Stato e storia tecnica](MODEL_SERVING.md).
 
 # 40. REGISTRAZIONE DEL MODELLO
 
@@ -970,13 +982,13 @@ Il nome previsto per il classificatore è `rome_transport.ml.major_delay_classif
 
 Tracciamento MLflow, selezione finale e scoring sono completati. Il notebook 12 mantiene la pipeline completa di preprocessing e classificazione nel percorso di scoring attivo e registra i metadati del tentativo in `rome_transport.ml.model_registry_metadata`. Gli errori inattesi non sono trattati silenziosamente come limitazioni note di Serverless.
 
-La persistenza degli artefatti e il successivo caricamento del modello in un ambiente supportato rimangono sviluppi futuri. Gli alias `candidate`/`champion` facevano parte del disegno iniziale di governance e non sono dichiarati come distribuiti.
+La persistenza Spark non è più uno sviluppo del target production. I notebook restano riferimento; persistenza e reload del nuovo modello saranno implementati nel backend sklearn. Gli alias `candidate`/`champion` erano un disegno iniziale e non sono distribuiti.
 
 ---
 
 # 41. BATCH SCORING
 
-Il percorso batch implementato, con impostazione assimilabile alla produzione, è:
+Il percorso batch storico implementato è:
 
 ```text
 Feature ammissibili alla previsione per l'ultima snapshot disponibile
@@ -1087,7 +1099,7 @@ Le metriche finali sono riferimenti fissi. L'elenco conserva il perimetro proget
 
 # 48. PERCORSO DI IMPLEMENTAZIONE
 
-Le fasi mantengono la logica del piano iniziale. Per ciascuna, l'esito distingue quanto realizzato dalle attività ancora previste.
+Le fasi seguenti ricostruiscono il piano e gli esiti storici. Non sono la sequenza del nuovo deployment operativo: per quella valgono ADR-001 e la roadmap A-K. Silver/feature/replay/Gold non sono freschi nonostante l'ingestion Bronze pianificata.
 
 ## Fase 1 — Ambiente
 
@@ -1294,7 +1306,7 @@ Questo rischio si è tradotto in un risultato utile: Persistence è rimasta la s
 
 ## Limiti residui dell'ambiente e dell'interpretazione
 
-La registrazione è rinviata per la serializzazione Serverless. La dashboard interattiva richiede autenticazione; il PDF e l'export JSON ne consentono la presentazione nel portfolio senza attribuirle accesso pubblico live. Otto date di servizio limitano la generalizzazione; gli esiti futuri GTFS-Realtime sono proxy operativi e la causalità dei timestamp non prova l'esatta disponibilità in ingestion. Le definizioni di ritardo e rischio del JSON corrente sono allineate nella sezione 14; gli esiti restano proxy futuri GTFS-RT.
+Il tentativo storico di registrazione Spark non è riuscito; ADR-001 assegna il runtime operativo al futuro backend esterno. La dashboard interattiva richiede autenticazione; il PDF e l'export JSON ne consentono la presentazione nel portfolio senza attribuirle accesso pubblico live. Otto date di servizio limitano la generalizzazione; gli esiti futuri GTFS-Realtime sono proxy operativi e la causalità dei timestamp non prova l'esatta disponibilità in ingestion. Le definizioni di ritardo e rischio del JSON corrente sono allineate nella sezione 14; gli esiti restano proxy futuri GTFS-RT.
 
 ---
 
@@ -1345,9 +1357,9 @@ L'analisi dettagliata degli errori per segmento rimane un'estensione, non un app
 - Dashboard AI/BI su cinque pagine, alimentata da Databricks SQL e pubblicata con autenticazione.
 - Export `.lvdash.json` e PDF completo di cinque pagine, README e metodologia PACE dettagliata.
 
-## Componenti rinviate o future
+## Componenti operative future
 
-- Registrazione riuscita degli artefatti in Unity Catalog e verifica di distribuzione/ricaricamento.
+- Refresh downstream Databricks e readiness, poi FastAPI/sklearn con nuova valutazione, artifact completo e reload verificato; nessuna dipendenza da Spark/UC registration.
 - Mantenimento degli export PDF/screenshot allineati alle successive revisioni della dashboard.
 - Presentazione Power BI pubblica separata, descritta in `dashboard/powerbi/README.md`.
 - Dizionario dei dati e scheda del modello autonomi, spiegabilità più ampia e monitoraggio su un orizzonte maggiore dove non ancora documentati.
@@ -1362,7 +1374,7 @@ Il progetto implementato può essere descritto così:
 
 > Ho progettato una piattaforma end-to-end di analisi e Machine Learning basata sui dati ufficiali del trasporto pubblico di Roma. Ho costruito pipeline di ingestion GTFS Static e realtime, creato livelli Bronze/Silver/Gold in Delta Lake, sviluppato feature temporali e operative, addestrato e tracciato modelli di regressione e classificazione con MLflow. Ho mantenuto Persistence per la regressione e selezionato Random Forest per la classificazione, documentato il rinvio della registrazione in Unity Catalog, generato previsioni batch con impostazione assimilabile alla produzione e reso disponibili analisi operative e prestazioni dei modelli tramite Databricks SQL e AI/BI Dashboards.
 
-La scelta end-to-end di Databricks mantiene il ciclo analitico in una piattaforma coerente con l'obiettivo del progetto.
+Il ciclo qui raccontato è la ricerca storica. Il target operativo mantiene il lakehouse in Databricks e sposta training/inference nel backend esterno secondo ADR-001.
 
 ```text
 Ingestion dei dati
@@ -1432,7 +1444,7 @@ Il modello di Machine Learning è una componente del progetto, non il progetto n
 
 **Validazione:** cronologica
 
-**Inferenza:** batch scoring con impostazione assimilabile alla produzione
+**Inferenza:** replay Spark storico; target operativo futuro FastAPI/sklearn, con soglia rivalidata
 
 **Livello analitico:** otto tabelle Gold per snapshot analitiche
 
@@ -1444,7 +1456,15 @@ Il modello di Machine Learning è una componente del progetto, non il progetto n
 
 ## Stato finale ed estensioni
 
-L'implementazione Databricks è sostanzialmente completa fino a scoring, analisi Gold e dashboard AI/BI autenticata. La registrazione in produzione resta rinviata. Il JSON corrente e la documentazione correggono il precedente disallineamento di ritardo/rischio: questa revisione preserva logica, dati, modelli e metriche. Il PDF completo è già disponibile nel repository; la presentazione pubblica Power BI rimane un'estensione separata del portfolio.
+Il percorso storico è implementato fino a replay, Gold e dashboard autenticata; ingestion è pianificata, downstream stale. Il target operativo esterno è definito ma non implementato. JSON locale corretto, PDF/screenshot precedenti da sostituire dopo rollout autorizzato; Power BI resta separato. Dati, target, modelli e metriche storiche non vengono ricalcolati.
+
+## Roadmap operativa corrente
+
+[Roadmap completa e criteri di accettazione](ROADMAP.md): A contratti handoff (questa PR);
+B freshness/orchestrazione downstream; C futuro repository `rome-mobility-intelligence`;
+D FastAPI/sklearn training/evaluation/persistence; E inference; F prediction history;
+G n8n; H serving/API; I React/Google AI Studio; J AI insight; K Power BI separato.
+Nessun repository app viene creato; nessun Job/downstream/dashboard live è modificato.
 
 ---
 

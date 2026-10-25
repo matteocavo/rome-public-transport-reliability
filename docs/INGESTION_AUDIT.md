@@ -1,5 +1,15 @@
 # GTFS-Realtime ingestion audit contract
 
+## Operational architecture boundary
+
+Ingestion remains owned by Databricks. The 25 October 2026 read-only inventory confirms
+the existing periodic Job runs only notebook 05; it does not refresh 06 Silver, 07
+enrichment or 08 current-scoring preparation. Bronze freshness therefore does not imply
+fresh features. A separately authorized downstream DAG and readiness contract are
+specified in [operational handoff](OPERATIONAL_ML_HANDOFF.md). n8n will coordinate external
+FastAPI calls/retry/alerts after readiness, without replacing this ingestion schedule.
+No runtime settings are modified by the architectural handoff PR.
+
 ## Scope and deployment status
 
 PR2 was merged as repository code without runtime changes. A separately authorized controlled rollout on 25 October 2026 applied the additive audit migration and deployed notebooks 05, 07 and 99 from main merge `ae7f9ef11724daaf7bb1cd3e9530673d1c7ef9a8`. The manual production ingestion run succeeded; detailed evidence and remaining validation limits follow below. Notebook 05 is the production writer; notebook 04 remains a historical exploration/bootstrap notebook and must not be scheduled alongside it. Notebook 06 is unchanged. ML, features, labels, Gold and dashboard artifacts are unchanged.
@@ -82,13 +92,13 @@ Runtime validation below covers schema compatibility, nonempty FULL feeds, audit
 
 Main deployed: `ae7f9ef11724daaf7bb1cd3e9530673d1c7ef9a8` (PR2 merge). All three deployed sources were re-exported and compared with main. The existing runtime 05/07 exports matched the PR1 baseline exactly before replacement; their prior object IDs and source backups were retained in the operator evidence bundle. Notebook 99 was absent from this runtime folder and was created from main. Notebook 04 remains unscheduled/exploratory; 06 and 08+ were not changed.
 
-Workspace folder: `/Workspace/Users/matteo.cavo.data@gmail.com/Rome Public Transport Reliability & Delay Prediction/notebooks`.
+Workspace folder: the existing project notebook folder.
 
-| Notebook | Object ID | Runtime action |
-| --- | --- | --- |
-| `05_gtfs_realtime_pipeline` | 212980067827057 | Updated and executed by its existing Job |
-| `07_gtfs_realtime_enrichment` | 212980067827075 | Updated only; no enrichment execution |
-| `99_realtime_pipeline_health_check` | 95918530668650 | Created; all seven SQL cells executed through the SQL warehouse |
+| Notebook | Runtime action |
+| --- | --- |
+| `05_gtfs_realtime_pipeline` | Updated and executed by its existing Job |
+| `07_gtfs_realtime_enrichment` | Updated only; no enrichment execution |
+| `99_realtime_pipeline_health_check` | Created; all seven SQL cells executed through the SQL warehouse |
 
 ### Migration and rollback baseline
 
@@ -100,7 +110,7 @@ Rollback was not needed. The prepared recovery point is audit version 10501 plus
 
 ### Manual run and audit outcomes
 
-[Controlled Job run 588842343799032](https://dbc-53d4ca74-894f.cloud.databricks.com/?o=7474647743124164#job/195066091322974/run/588842343799032) completed SUCCESS. Task run: 401724133439920. Logical batch: `b5ea5cf1-e87a-4c3b-bf9b-5b452ea33076`; attempt: `b72364ae-cfe2-4138-8042-7c443a3d5994`.
+Controlled Job run 588842343799032 (runtime evidence retained privately) completed SUCCESS. Task run: 401724133439920. Logical batch: `b5ea5cf1-e87a-4c3b-bf9b-5b452ea33076`; attempt: `b72364ae-cfe2-4138-8042-7c443a3d5994`.
 
 Exactly one BATCH RUNNING, three SOURCE SUCCESS and one terminal BATCH SUCCESS were persisted. Every source had the same non-null batch/attempt IDs, a positive feed timestamp, `FULL_DATASET`, `DECODED`, `is_empty=false` and NULL error fields.
 
@@ -137,7 +147,7 @@ ML training/scoring/registration, Gold, dashboard, Power BI and the app reposito
 
 ### First scheduled observation after restoration
 
-[Periodic run 1030587734568633](https://dbc-53d4ca74-894f.cloud.databricks.com/?o=7474647743124164#job/195066091322974/run/1030587734568633) started automatically after trigger restoration and completed SUCCESS. It persisted the expected five records under new logical batch `6e821354-466c-4e97-a8f7-f2ed895fe9ef` and attempt `d0daff62-c731-412f-a022-a72cbe0bb8d9`. All three sources were SUCCESS, DECODED, FULL_DATASET, nonempty and without errors; terminal BATCH was SUCCESS.
+Periodic run 1030587734568633 (runtime evidence retained privately) started automatically after trigger restoration and completed SUCCESS. It persisted the expected five records under new logical batch `6e821354-466c-4e97-a8f7-f2ed895fe9ef` and attempt `d0daff62-c731-412f-a022-a72cbe0bb8d9`. All three sources were SUCCESS, DECODED, FULL_DATASET, nonempty and without errors; terminal BATCH was SUCCESS.
 
 | Source | Entities | Parsed | Appended | Duplicates |
 | --- | ---: | ---: | ---: | ---: |
