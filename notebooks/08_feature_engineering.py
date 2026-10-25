@@ -16,6 +16,10 @@
 
 # COMMAND ----------
 
+# MAGIC %run ./08_common_feature_preparation
+
+# COMMAND ----------
+
 from functools import reduce
 from pyspark.sql import functions as F
 from pyspark.sql.window import Window
@@ -61,17 +65,6 @@ def duplicate_report(df, keys, label):
         groups.orderBy(F.col("count").desc()).show(20, truncate=False)
     return summary
 
-def historical_window(keys):
-    # Exclude ALL observations at the current epoch second, including tied peers.
-    return Window.partitionBy(*keys).orderBy("feed_timestamp").rangeBetween(Window.unboundedPreceding, -1)
-
-def haversine_meters(lat1, lon1, lat2, lon2):
-    p1, p2 = F.radians(lat1), F.radians(lat2)
-    a = F.pow(F.sin((p2 - p1) / 2), 2) + F.cos(p1) * F.cos(p2) * F.pow(F.sin(F.radians(lon2 - lon1) / 2), 2)
-    valid = lat1.between(-90, 90) & lat2.between(-90, 90) & lon1.between(-180, 180) & lon2.between(-180, 180)
-    return F.when(valid, 2 * 6371000.0 * F.asin(F.sqrt(F.least(F.lit(1.0), F.greatest(F.lit(0.0), a)))))
-
-
 # COMMAND ----------
 
 # MAGIC %md
@@ -114,7 +107,6 @@ print("Rows excluded for missing/invalid ordering identifiers:", source_count - 
 if ordered_source_count == 0:
     raise ValueError("No valid ordering identifiers")
 
-
 # COMMAND ----------
 
 # MAGIC %md
@@ -129,7 +121,6 @@ if duplicate_report(observations, TRIP_SNAPSHOT_KEY + ["stop_sequence"], "Snapsh
 stop_order = Window.partitionBy(*TRIP_SNAPSHOT_KEY).orderBy("stop_sequence")
 last_three_stops = stop_order.rowsBetween(-2, 0)
 
-
 # COMMAND ----------
 
 # MAGIC %md
@@ -139,224 +130,17 @@ last_three_stops = stop_order.rowsBetween(-2, 0)
 
 # COMMAND ----------
 
-features = observations
-for source_col, target_col in [
-    ("arrival_delay_seconds", "target_next_stop_delay_seconds"),
-    ("stop_sequence", "target_next_stop_sequence"), ("stop_id", "target_next_stop_id"),
-    ("feed_timestamp", "target_feed_timestamp"), ("trip_id", "target_trip_id"),
-    ("service_date", "target_service_date"),
-]:
-    features = features.withColumn(target_col, F.lead(source_col, 1).over(stop_order))
+features = prepare_common_features(observations)
+# Same-snapshot feed estimates are retained solely for the legacy training/audit handoff.
+# Future observation matching and realized labels remain exclusively in notebook 09.
 features = (features
+    .withColumn("target_next_stop_delay_seconds", F.lead("arrival_delay_seconds", 1).over(stop_order))
     .withColumn("target_major_delay_flag", F.when(F.col("target_next_stop_delay_seconds").isNotNull(),
         (F.col("target_next_stop_delay_seconds") >= major_delay_threshold_seconds).cast("int")))
     .withColumn("major_delay_threshold_seconds", F.lit(major_delay_threshold_seconds))
     .withColumn("target_stop_sequence_gap", F.col("target_next_stop_sequence") - F.col("stop_sequence"))
     .withColumn("source_delta_version", F.lit(SOURCE_VERSION))
     .withColumn("target_definition", F.lit("same_snapshot_next_reported_stop_arrival_delay")))
-# Retain terminal/null-target observations until historical features are complete.
-
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Temporal Features
-# MAGIC Derive clock features from feed_datetime and calendar features from service_date, never from target timestamps.
-# MAGIC Day of week follows Spark's Sunday=1 through Saturday=7 convention; weekend means Saturday or Sunday.
-
-# COMMAND ----------
-
-features = (features.withColumn("feed_hour", F.hour("feed_datetime"))
-    .withColumn("feed_minute", F.minute("feed_datetime"))
-    .withColumn("day_of_week", F.dayofweek("service_date"))
-    .withColumn("is_weekend", F.col("day_of_week").isin(1, 7).cast("int"))
-    .withColumn("service_month", F.month("service_date"))
-    .withColumn("service_day_of_month", F.dayofmonth("service_date"))
-    .withColumn("minutes_since_midnight", F.col("feed_hour") * 60 + F.col("feed_minute")))
-
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Current Delay Features
-# MAGIC Preserve current arrival and departure delays and derive minutes and magnitude without imputing missing values.
-# MAGIC Currently delayed means above +60 seconds and early means below −60 seconds, based on the current stop's arrival-delay estimate.
-
-# COMMAND ----------
-
-features = (features
-    .withColumn("current_arrival_delay_seconds", F.col("arrival_delay_seconds"))
-    .withColumn("current_arrival_delay_minutes", F.col("arrival_delay_seconds") / 60.0)
-    .withColumn("current_departure_delay_seconds", F.col("departure_delay_seconds"))
-    .withColumn("current_departure_delay_minutes", F.col("departure_delay_seconds") / 60.0)
-    .withColumn("abs_current_delay_seconds", F.abs("current_arrival_delay_seconds"))
-    .withColumn("is_currently_delayed_flag", (F.col("current_arrival_delay_seconds") > current_delay_tolerance_seconds).cast("int"))
-    .withColumn("is_currently_early_flag", (F.col("current_arrival_delay_seconds") < -current_delay_tolerance_seconds).cast("int")))
-
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Delay History Features
-# MAGIC Build lag 1–3 from preceding stop records in the same trip snapshot and rolling summaries over the current and two preceding stops.
-# MAGIC These are feed-available estimates ordered by stop sequence, not necessarily completed-stop outcomes; missing delays never pull values from the next stop.
-
-# COMMAND ----------
-
-for offset in (1, 2, 3):
-    features = features.withColumn(f"lag_{offset}_arrival_delay_seconds", F.lag("arrival_delay_seconds", offset).over(stop_order))
-features = (features
-    .withColumn("rolling_mean_delay_last_3_stops", F.avg("arrival_delay_seconds").over(last_three_stops))
-    .withColumn("rolling_max_delay_last_3_stops", F.max("arrival_delay_seconds").over(last_three_stops))
-    .withColumn("rolling_std_delay_last_3_stops", F.stddev_samp("arrival_delay_seconds").over(last_three_stops))
-    .withColumn("lag_1_stop_sequence_audit", F.lag("stop_sequence", 1).over(stop_order))
-    .withColumn("rolling_max_stop_sequence_audit", F.max("stop_sequence").over(last_three_stops)))
-
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Delay Propagation Features
-# MAGIC Measure delay change and acceleration using only current and preceding stop estimates.
-# MAGIC Acceleration equals the current first difference minus the preceding first difference and stays null when required history is missing.
-
-# COMMAND ----------
-
-features = (features
-    .withColumn("delay_change_from_previous_stop", F.col("current_arrival_delay_seconds") - F.col("lag_1_arrival_delay_seconds"))
-    .withColumn("delay_acceleration", F.col("delay_change_from_previous_stop")
-        - (F.col("lag_1_arrival_delay_seconds") - F.col("lag_2_arrival_delay_seconds"))))
-
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Schedule and Trip Progress Features
-# MAGIC Use static schedule metadata already carried by the enriched source for the next represented stop's scheduled interval and spatial context.
-# MAGIC The source does not carry a verified full-trip max_stop_sequence_for_trip, so trip_progress_ratio remains null with an availability flag instead of treating partial realtime coverage as a complete schedule.
-
-# COMMAND ----------
-
-for source_col, next_col in [
-    ("arrival_seconds", "next_scheduled_arrival_seconds_audit"),
-    ("stop_lat", "next_static_stop_lat_audit"), ("stop_lon", "next_static_stop_lon_audit"),
-]:
-    features = features.withColumn(next_col, F.lead(source_col, 1).over(stop_order))
-features = (features
-    .withColumn("scheduled_seconds_to_next_stop", F.col("next_scheduled_arrival_seconds_audit") - F.col("arrival_seconds"))
-    .withColumn("trip_progress_ratio", F.lit(None).cast("double"))
-    .withColumn("missing_trip_progress_ratio", F.lit(1))
-    .withColumn("trip_progress_basis", F.lit("unavailable_full_static_trip_extent")))
-assert_no_rows(features, F.col("scheduled_seconds_to_next_stop") < 0,
-    "Static arrival_seconds decrease in stop order; inspect schedule enrichment")
-
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Vehicle State Features
-# MAGIC Retain upstream vehicle state only when its position timestamp and staleness establish a match at or before the feed timestamp, within 180 seconds.
-# MAGIC Missing positions remain eligible for modeling with indicators and null vehicle state rather than automatic row removal.
-
-# COMMAND ----------
-
-position_available = F.col("vehicle_datetime").isNotNull() & F.col("position_time_diff_seconds").between(0, 180)
-features = (features
-    .withColumn("vehicle_position_available_flag", position_available.cast("int"))
-    .withColumn("vehicle_position_staleness_seconds", F.when(position_available, F.col("position_time_diff_seconds"))))
-for name in ["vehicle_speed", "vehicle_bearing", "vehicle_odometer", "current_stop_sequence", "current_status"]:
-    features = features.withColumn(name, F.when(position_available, F.col(name)))
-
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Route and Stop Context
-# MAGIC Preserve route, agency, direction and stop coordinates, and compute straight-line distance to the next represented stop with native Spark Haversine expressions.
-# MAGIC Coordinates come from static stop metadata rather than future vehicle positions; invalid or missing coordinates yield null distance.
-
-# COMMAND ----------
-
-for name in ["stop_lat", "stop_lon", "next_static_stop_lat_audit", "next_static_stop_lon_audit"]:
-    features = features.withColumn(name, F.expr(f"try_cast(`{name}` AS DOUBLE)"))
-features = features.withColumn("distance_to_next_stop_meters", haversine_meters(
-    F.col("stop_lat"), F.col("stop_lon"), F.col("next_static_stop_lat_audit"), F.col("next_static_stop_lon_audit")))
-
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Alert Features
-# MAGIC Use upstream snapshot availability to distinguish no active alert from unknown coverage, masking numeric alert context when a snapshot is absent.
-# MAGIC Original alert arrays remain audit columns; inputs use flags and counts instead of high-cardinality text.
-
-# COMMAND ----------
-
-assert_no_rows(features,
-    (F.col("matched_alert_feed_timestamp") > F.col("feed_timestamp"))
-    | ~F.col("alert_snapshot_available_flag").eqNullSafe(F.col("matched_alert_feed_timestamp").isNotNull()),
-    "Alert snapshot availability or timing is inconsistent")
-alert_available = F.coalesce(F.col("alert_snapshot_available_flag"), F.lit(False))
-for name in ["active_alert_flag", "active_alert_count", "active_detour_flag", "active_construction_flag"]:
-    features = features.withColumn(name, F.when(alert_available, F.col(name).cast("int")))
-features = (features
-    .withColumn("has_alert_cause_flag", F.when(alert_available, (F.size("alert_causes") > 0).cast("int")))
-    .withColumn("has_alert_effect_flag", F.when(alert_available, (F.size("alert_effects") > 0).cast("int"))))
-
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Historical Reliability and Count Features
-# MAGIC Compute cumulative means and observation counts from strictly earlier feed timestamps, excluding every same-timestamp peer with a numeric range frame.
-# MAGIC History uses current arrival-delay estimates from all valid source observations before target filtering, with no global-mean fallback; repeated snapshots represent observation-weighted history rather than independent completed trips.
-
-# COMMAND ----------
-
-HISTORY_SPECS = [
-    ("route", ["route_id"], "historical_route_mean_delay"),
-    ("stop", ["stop_id"], "historical_stop_mean_delay"),
-    ("route_stop", ["route_id", "stop_id"], "historical_route_stop_mean_delay"),
-    ("route_hour", ["route_id", "feed_hour"], "historical_route_hour_mean_delay"),
-]
-historical_audit_columns = []
-for label, keys, mean_name in HISTORY_SPECS:
-    window = historical_window(keys)
-    valid_keys = reduce(lambda a, b: a & b, [F.col(c).isNotNull() for c in keys])
-    max_time_name = f"historical_{label}_max_feed_timestamp_audit"
-    count_name = f"historical_{label}_observation_count"
-    delay_count_name = f"historical_{label}_nonnull_delay_count_audit"
-    features = (features
-        .withColumn(mean_name, F.when(valid_keys, F.avg("current_arrival_delay_seconds").over(window)))
-        .withColumn(count_name, F.when(valid_keys, F.count(F.lit(1)).over(window)))
-        .withColumn(delay_count_name, F.when(valid_keys, F.count("current_arrival_delay_seconds").over(window)))
-        .withColumn(max_time_name, F.when(valid_keys, F.max("feed_timestamp").over(window))))
-    historical_audit_columns += [max_time_name, delay_count_name]
-
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Missingness Indicators
-# MAGIC Expose missing current delays, vehicle state, historical context and alert coverage as numeric flags.
-# MAGIC Historical means with no prior non-null delay remain null, and unknown alert coverage stays distinct from a known snapshot with no applicable alerts.
-
-# COMMAND ----------
-
-missingness_sources = {
-    "missing_current_arrival_delay": "current_arrival_delay_seconds",
-    "missing_current_departure_delay": "current_departure_delay_seconds",
-    "missing_historical_route_delay": "historical_route_mean_delay",
-    "missing_historical_stop_delay": "historical_stop_mean_delay",
-    "missing_historical_route_stop_delay": "historical_route_stop_mean_delay",
-    "missing_historical_route_hour_delay": "historical_route_hour_mean_delay",
-}
-for name, input_column in missingness_sources.items():
-    features = features.withColumn(name, F.col(input_column).isNull().cast("int"))
-features = (features
-    .withColumn("missing_vehicle_position", 1 - F.col("vehicle_position_available_flag"))
-    .withColumn("missing_alert_snapshot", (~F.coalesce(F.col("alert_snapshot_available_flag"), F.lit(False))).cast("int")))
-
 
 # COMMAND ----------
 
@@ -408,7 +192,6 @@ print("Numeric features:", numeric_features)
 print("Categorical features:", categorical_features)
 print("Targets:", target_columns)
 
-
 # COMMAND ----------
 
 # MAGIC %md
@@ -441,7 +224,6 @@ features.orderBy(*OBS_KEY).select(
     "historical_route_mean_delay", "historical_route_max_feed_timestamp_audit",
 ).show(20, truncate=False)
 print("Leakage provenance checks passed")
-
 
 # COMMAND ----------
 
@@ -482,7 +264,6 @@ assert geo_fixture.filter(
 ).count() == 0
 print("Causal window and spatial edge checks passed")
 
-
 # COMMAND ----------
 
 # MAGIC %md
@@ -507,7 +288,6 @@ feature_count = training_ready.count()
 print("Training-ready rows:", feature_count, "of", ordered_source_count, "valid source observations")
 if feature_count == 0:
     raise ValueError("No valid next-stop targets; output write blocked")
-
 
 # COMMAND ----------
 
@@ -537,7 +317,6 @@ assert_no_rows(training_ready,
     ~F.col("target_major_delay_flag").eqNullSafe((F.col("target_next_stop_delay_seconds") >= major_delay_threshold_seconds).cast("int")),
     "Classification target disagrees with the regression label")
 
-
 # COMMAND ----------
 
 # MAGIC %md
@@ -564,7 +343,6 @@ nonfinite_summary.show(truncate=False, vertical=True)
 if any(value > 0 for value in nonfinite_summary.first().asDict().values()):
     raise ValueError("NaN/Infinity in numeric inputs or target; inspect source values")
 
-
 # COMMAND ----------
 
 # MAGIC %md
@@ -580,7 +358,6 @@ assert feature_count <= ordered_source_count
 assert not (set(feature_columns) & set(forbidden_feature_columns))
 training_ready.printSchema()
 validation_passed = True
-
 
 # COMMAND ----------
 
@@ -599,7 +376,6 @@ if not validation_passed:
     .option("overwriteSchema", "true")
     .saveAsTable(OUTPUT_TABLE))
 print("Saved:", OUTPUT_TABLE)
-
 
 # COMMAND ----------
 
@@ -623,7 +399,6 @@ saved.orderBy(*OBS_KEY).select(
     "lag_1_arrival_delay_seconds", "historical_route_mean_delay", "vehicle_speed", "active_alert_flag",
     "target_next_stop_delay_seconds", "target_major_delay_flag",
 ).show(20, truncate=False)
-
 
 # COMMAND ----------
 

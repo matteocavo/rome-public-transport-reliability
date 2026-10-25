@@ -533,6 +533,8 @@ Le transizioni usano le fasce −60/180/300 secondi della sezione 14; “Ritardo
 
 ---
 
+**PR3 - preparazione comune e input scoring corrente (solo repository):** 08 riusa `08_common_feature_preparation` mantenendo il percorso training e il contratto di 47 feature (42 numerical + 5 categorical). Il nuovo `08_current_scoring_dataset` prepara da Silver la staging `rome_transport.features.next_stop_delay_scoring`, senza label o ritardi futuri: osservazione corrente e fermata successiva restano identificativi distinti. Lo storico viene calcolato prima della selezione della snapshot; nessuna nuova imputazione o esecuzione di modelli. Scrittura runtime disabilitata di default, rollout separato ancora necessario. [Contratto, audit delle feature e rollout](CURRENT_SCORING.md).
+
 # 25. FEATURE ENGINEERING
 
 La progettazione iniziale dei gruppi di feature è conservata di seguito. I nomi concettuali non costituiscono lo schema completo implementato. Il notebook 08 crea la tabella effettiva; i notebook 10–12 utilizzano elenchi espliciti di colonne ammesse ed escluse.
