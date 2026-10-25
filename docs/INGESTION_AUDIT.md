@@ -1,37 +1,38 @@
-# GTFS-Realtime ingestion audit contract
+# Contratto di audit dell'ingestion GTFS-Realtime
 
-## Operational architecture boundary
+## Confine dell'architettura operativa
 
-Ingestion remains owned by Databricks. The 25 October 2026 read-only inventory confirms
-the existing periodic Job runs only notebook 05; it does not refresh 06 Silver, 07
-enrichment or 08 current-scoring preparation. Bronze freshness therefore does not imply
-fresh features. A separately authorized downstream DAG and readiness contract are
-specified in [operational handoff](OPERATIONAL_ML_HANDOFF.md). n8n will coordinate external
-FastAPI calls/retry/alerts after readiness, without replacing this ingestion schedule.
-No runtime settings are modified by the architectural handoff PR.
+L'ingestion resta responsabilità di Databricks. L'inventario in sola lettura del 25 ottobre
+2026 conferma che il Job periodico esistente esegue solo il notebook 05; non aggiorna
+06 Silver, 07 enrichment o 08 di preparazione degli input di scoring. La freschezza dei
+dati (freshness) Bronze non implica quindi feature aggiornate. Un DAG downstream e un
+contratto di readiness, da autorizzare separatamente, sono specificati nell'[handoff
+operativo](OPERATIONAL_ML_HANDOFF.md). n8n coordinerà chiamate FastAPI/retry/alert esterni
+dopo la readiness, senza sostituire questa pianificazione ingestion. La PR di handoff
+architetturale non modifica impostazioni runtime.
 
-## Scope and deployment status
+## Ambito e stato del deployment
 
-PR2 was merged as repository code without runtime changes. A separately authorized controlled rollout on 25 October 2026 applied the additive audit migration and deployed notebooks 05, 07 and 99 from main merge `ae7f9ef11724daaf7bb1cd3e9530673d1c7ef9a8`. The manual production ingestion run succeeded; detailed evidence and remaining validation limits follow below. Notebook 05 is the production writer; notebook 04 remains a historical exploration/bootstrap notebook and must not be scheduled alongside it. Notebook 06 is unchanged. ML, features, labels, Gold and dashboard artifacts are unchanged.
+PR2 è stata integrata come codice del repository senza modifiche runtime. Un rollout controllato autorizzato separatamente il 25 ottobre 2026 ha applicato la migrazione audit additiva e distribuito i notebook 05, 07 e 99 dal merge main `ae7f9ef11724daaf7bb1cd3e9530673d1c7ef9a8`. La run manuale di ingestion in produzione è riuscita; seguono evidenze dettagliate e limiti residui della validazione. Il notebook 05 è il writer di produzione; il notebook 04 resta storico, esplorativo/di bootstrap e non deve essere pianificato insieme a esso. Il notebook 06 è invariato. ML, feature, etichette, Gold e artifact dashboard sono invariati.
 
-The three GTFS entity table schemas and parser payloads remain unchanged. The audit extension and notebook 07 empty-alert alignment require the explicit rollout below. Do not deploy notebook 05 before the audit migration: preflight verifies column names/types and fails before network retrieval or entity writes.
+Gli schemi delle tre tabelle di entità GTFS e i payload del parser restano invariati. L'estensione audit e l'allineamento degli alert vuoti nel notebook 07 richiedono il rollout esplicito sotto riportato. Non distribuire il notebook 05 prima della migrazione audit: il controllo preliminare verifica nomi/tipi delle colonne e fallisce prima del recupero dalla rete o delle scritture di entità.
 
-## Header, parsing and empty responses
+## Header, parsing e risposte vuote
 
-The protobuf header is read before building any DataFrame. A request/decode with an initialized header, nonempty GTFS version and positive explicit feed timestamp can represent zero entities: SOURCE SUCCESS, entities_received=0, parsed_row_count=0, rows_appended=0, is_empty=true. No entity row is fabricated. The explicit timestamp requirement is this pipeline's snapshot-key policy; it is not a claim that every optional protobuf field is required by GTFS.
+L'header protobuf viene letto prima di costruire qualsiasi DataFrame. Una richiesta/decodifica con header inizializzato, versione GTFS non vuota e timestamp esplicito positivo del feed può rappresentare zero entità: SOURCE SUCCESS, entities_received=0, parsed_row_count=0, rows_appended=0, is_empty=true. Non viene inventata alcuna riga di entità. Il requisito del timestamp esplicito è la politica di questa pipeline per la chiave della snapshot; non implica che GTFS richieda ogni campo protobuf opzionale.
 
-Incrementality follows the [official GTFS-Realtime reference](https://gtfs.org/documentation/realtime/reference/#enum-incrementality): omitted incrementality uses the protobuf FULL_DATASET default. Explicit DIFFERENTIAL is rejected as INVALID_FEED_METADATA, before any entity append. Deleted or unexpected entity types in a FULL feed are rejected as PARSE_ERROR rather than silently skipped. Full/differential mode is validated per fetched payload; historical Roman feed modes are not retroactively certified.
+L'incrementalità segue il [riferimento ufficiale GTFS-Realtime](https://gtfs.org/documentation/realtime/reference/#enum-incrementality): se omessa, usa il valore predefinito protobuf FULL_DATASET. DIFFERENTIAL esplicito viene rifiutato come INVALID_FEED_METADATA prima di qualsiasi append di entità. Entità eliminate o di tipo inatteso in un feed FULL vengono rifiutate come PARSE_ERROR anziché saltate implicitamente. La modalità full/differential viene validata per ogni payload recuperato; le modalità storiche dei feed romani non sono certificate retroattivamente.
 
-Zero parsed rows with nonzero entities is not labeled an empty feed. A TripUpdate entity may legitimately have no stop updates. entities_received now counts decoded protobuf entities, not distinct parsed entity IDs or stop rows. The separate parsed_row_count preserves this distinction.
+Zero righe analizzate con entità non nulle non viene classificato come feed vuoto. Un'entità TripUpdate può legittimamente non avere aggiornamenti delle fermate. entities_received conta ora le entità protobuf decodificate, non gli ID distinti delle entità analizzate o le righe delle fermate. Il campo separato parsed_row_count preserva questa distinzione.
 
-NETWORK_ERROR, HTTP_ERROR, INCOMPLETE_READ, DECODE_ERROR, PARSE_ERROR, INVALID_FEED_METADATA, WRITE_ERROR and UNKNOWN_ERROR are stable categories. Original error_message is retained. Metadata known before failure remains available; unknown parsed/duplicate counts are NULL. The legacy non-null rows_appended=0 on a failure is not proof that a timed-out write could not commit.
+NETWORK_ERROR, HTTP_ERROR, INCOMPLETE_READ, DECODE_ERROR, PARSE_ERROR, INVALID_FEED_METADATA, WRITE_ERROR e UNKNOWN_ERROR sono categorie stabili. error_message originale viene mantenuto. I metadati noti prima dell'errore restano disponibili; i conteggi sconosciuti di righe analizzate/duplicate sono NULL. Il valore legacy non NULL rows_appended=0 in caso di errore non prova che una scrittura terminata in timeout non possa avere effettuato il commit.
 
-## Additive audit migration - applied during the authorized rollout
+## Migrazione audit additiva - applicata durante il rollout autorizzato
 
-Existing table: rome_transport.bronze.ingestion_runs. Preserve its seven existing columns:
+Tabella esistente: rome_transport.bronze.ingestion_runs. Preservare le sette colonne esistenti:
 run_timestamp TIMESTAMP, source_name STRING, feed_timestamp BIGINT, entities_received BIGINT, rows_appended BIGINT, status STRING, error_message STRING.
 
-The authorized rollout applied the following nine missing columns after checking all seven legacy column types. This SQL remains documentation; CI and the writer do not execute it automatically:
+Il rollout autorizzato ha applicato le seguenti nove colonne mancanti dopo aver verificato i tipi di tutte e sette le colonne legacy. Questo SQL resta documentazione; CI e writer non lo eseguono automaticamente:
 
 ```sql
 ALTER TABLE rome_transport.bronze.ingestion_runs ADD COLUMNS (
@@ -47,112 +48,112 @@ ALTER TABLE rome_transport.bronze.ingestion_runs ADD COLUMNS (
 );
 ```
 
-Inspect DESCRIBE first and add only missing columns if the migration was partially applied. No automatic ALTER, mergeSchema, rewrite, backfill or new table creation is performed. Legacy rows retain NULL new fields. Consumers use COALESCE(record_type, 'SOURCE') for historical source rows, and must not invent historical incrementality or empty-feed evidence.
+Ispezionare prima DESCRIBE e aggiungere solo le colonne mancanti se la migrazione è stata applicata parzialmente. Nessun ALTER, mergeSchema, riscrittura, backfill o creazione di tabella automatici. Le righe legacy conservano NULL nei nuovi campi. I consumer usano COALESCE(record_type, 'SOURCE') per le righe sorgente storiche e non devono inventare incrementalità storica o evidenze di feed vuoto.
 
-record_type=SOURCE records preserve source status SUCCESS/FAILED. record_type=BATCH uses reserved source_name=__batch__ and status RUNNING/SUCCESS/PARTIAL_SUCCESS/FAILED. Existing consumers must exclude __batch__ when calculating per-source counts. Old health queries are adjusted with this backward-compatible exclusion; new health cells require the migrated columns. No redundant entity_count/inserted_count/batch_status columns are added.
+I record record_type=SOURCE preservano lo stato sorgente SUCCESS/FAILED. record_type=BATCH usa source_name=__batch__ riservato e gli stati RUNNING/SUCCESS/PARTIAL_SUCCESS/FAILED. I consumer esistenti devono escludere __batch__ nel calcolo dei conteggi per sorgente. Le vecchie query di controllo sono adattate con questa esclusione retrocompatibile; le nuove celle di controllo richiedono le colonne migrate. Non si aggiungono colonne ridondanti entity_count/inserted_count/batch_status.
 
-duplicate_row_count = parsed_row_count - rows_appended includes exact duplicates within the payload and keys already in Bronze. The values are attempt-level, not reconstructed historical totals. BATCH rows do not represent a source snapshot: their source counts are placeholders and must never enter feed metrics.
+duplicate_row_count = parsed_row_count - rows_appended include duplicati esatti nel payload e chiavi già presenti in Bronze. I valori si riferiscono al singolo tentativo, non a totali storici ricostruiti. Le righe BATCH non rappresentano una snapshot sorgente: i conteggi sorgente sono segnaposto e non devono mai entrare nelle metriche del feed.
 
-## Batch outcomes and failure behavior
+## Esiti del batch e comportamento in caso di errore
 
-Each execution appends a BATCH RUNNING record before acquisition, then one SOURCE outcome per feed, then a terminal BATCH event. There is no replacement of previous attempts.
+Ogni esecuzione aggiunge un record BATCH RUNNING prima dell'acquisizione, poi un esito SOURCE per feed e infine un evento BATCH terminale. I tentativi precedenti non vengono sostituiti.
 
-- SUCCESS: every source succeeded, including valid empty full feeds.
-- PARTIAL_SUCCESS: at least one source succeeded and one failed.
-- FAILED: every source failed, or an audit/finalization failure prevents a usable batch record.
+- SUCCESS: tutte le sorgenti sono riuscite, inclusi feed full vuoti validi.
+- PARTIAL_SUCCESS: almeno una sorgente riuscita e una fallita.
+- FAILED: tutte le sorgenti fallite, oppure un errore di audit/finalizzazione impedisce un record batch utilizzabile.
 
-All sources are attempted even after a source failure. After terminal audit persistence, PARTIAL_SUCCESS and FAILED raise a task error so existing Job failure notifications can apply. No Job setting is changed. The authorized happy-path runtime test passed. Same-snapshot retry and failure notification delivery remain untested in production; failure propagation is covered by code review and offline tests.
+Tutte le sorgenti vengono tentate anche dopo un errore sorgente. Dopo la persistenza dell'audit terminale, PARTIAL_SUCCESS e FAILED generano un errore del task, consentendo l'applicazione delle notifiche di errore Job esistenti. Nessuna impostazione Job viene cambiata. Il test runtime autorizzato del percorso di successo è passato. Retry della stessa snapshot e consegna delle notifiche di errore non sono ancora testati in produzione; la propagazione degli errori è coperta da revisione del codice e test offline.
 
-An initial audit-write failure stops before source writes. A later audit-write failure is not swallowed: remaining sources are attempted and final status is FAILED. A final audit-write failure propagates. Cross-table writes are not atomic: a process crash or storage outage can still leave entity commits without their audit outcome; a RUNNING-only attempt means incomplete/unknown. This PR does not claim exactly-once audit transactions.
+Un errore iniziale di scrittura audit ferma l'esecuzione prima delle scritture sorgente. Un errore successivo di scrittura audit non viene assorbito: le sorgenti restanti vengono tentate e lo stato finale è FAILED. Un errore nella scrittura audit finale propaga. Le scritture tra tabelle non sono atomiche: un arresto del processo o un'indisponibilità dello storage possono ancora lasciare commit di entità senza esito audit; un tentativo con solo RUNNING significa incompleto/sconosciuto. Questa PR non dichiara transazioni audit exactly-once.
 
-## Retry and idempotency
+## Retry e idempotenza
 
-The existing snapshot keys are preserved: Trip Updates (feed_timestamp, entity_id, stop_sequence, stop_id), positions (feed_timestamp, entity_id), alerts (feed_timestamp, alert_id). Exact repeated rows within one payload are collapsed; conflicting payloads at one incoming key fail rather than selecting an arbitrary row. The anti-join is null-safe, preventing NULL stop keys from bypassing retry deduplication. No source values are corrected or overwritten.
+Le chiavi snapshot esistenti sono preservate: Trip Updates (feed_timestamp, entity_id, stop_sequence, stop_id), posizioni (feed_timestamp, entity_id), alert (feed_timestamp, alert_id). Le righe ripetute esatte nello stesso payload vengono accorpate; payload discordanti su una stessa chiave in ingresso fanno fallire l'esecuzione anziché selezionare una riga arbitraria. L'anti-join è null-safe e impedisce che chiavi fermata NULL aggirino la deduplicazione dei retry. Nessun valore sorgente viene corretto o sovrascritto.
 
-Run only one writer at a time. The current Job already has max_concurrent_runs=1; no additional writer, legacy notebook 04 run, or simultaneous manual run is safe without coordination. Delta does not enforce the logical keys, and an anti-join is not a multi-writer uniqueness constraint.
+Eseguire un solo writer alla volta. Il Job corrente ha già max_concurrent_runs=1; un writer aggiuntivo, una run del notebook legacy 04 o una run manuale simultanea non sono sicuri senza coordinamento. Delta non impone le chiavi logiche e un anti-join non è un vincolo di unicità tra più writer.
 
-run_realtime_ingestion(ingestion_batch_id=...) accepts a stable logical ID for explicit retries. Every call creates a fresh ingestion_attempt_id. With no supplied ID, each invocation starts a new logical batch; platform retries are not automatically grouped into one batch because this repository has no verified stable parent-run context contract. Bronze deduplication remains safe independently of audit grouping. If automatic cross-retry grouping is required, wire a stable root Job run identifier in a separately approved Job/notebook-parameter change; do not guess an execution-attempt ID is stable. No such change is made here.
+run_realtime_ingestion(ingestion_batch_id=...) accetta un ID logico stabile per retry espliciti. Ogni chiamata crea un nuovo ingestion_attempt_id. Senza ID fornito, ogni invocazione inizia un nuovo batch logico; i retry della piattaforma non sono raggruppati automaticamente nello stesso batch perché il repository non ha un contratto verificato di contesto stabile della run padre. La deduplicazione Bronze resta sicura indipendentemente dal raggruppamento audit. Se serve raggruppamento automatico tra retry, collegare un identificatore stabile della run Job radice in una modifica separatamente approvata a Job/parametri notebook; non assumere che l'ID del tentativo di esecuzione sia stabile. Qui non viene effettuata tale modifica.
 
-## Service Alerts and downstream impact
+## Service Alerts e impatto downstream
 
-A successful FULL_DATASET snapshot with zero alerts is affirmative evidence of an empty feed, unlike missing acquisition. Notebook 07 adds only successful empty FULL source audit timestamps to the existing alert-row timestamp timeline, so a newer empty snapshot supersedes older alert rows. Its equality join finds no alerts at that timestamp; coverage remains available with zero active alerts. DIFFERENTIAL and failed audit records are never evidence of empty full state. Nonempty audit timestamps are not unioned independently: if they are newer than the pinned alert table, doing so could falsely imply zero alerts under concurrent ingestion.
+Una snapshot FULL_DATASET riuscita con zero alert è evidenza positiva di feed vuoto, diversamente dall'acquisizione mancante. Il notebook 07 aggiunge alla timeline esistente dei timestamp delle righe alert solo i timestamp audit di sorgenti FULL vuote riuscite, così una snapshot vuota più recente sostituisce le vecchie righe alert. Il join di uguaglianza non trova alert a quel timestamp; la copertura resta disponibile con zero alert attivi. DIFFERENTIAL e record audit falliti non sono mai evidenza di uno stato full vuoto. I timestamp audit non vuoti non sono uniti indipendentemente: se più recenti della tabella alert fissata, potrebbero suggerire falsamente zero alert con ingestion concorrente.
 
-With no migrated audit columns, notebook 07 retains its historical row-based behavior. Partially present new fields fail validation. Source Delta versions, including ingestion_runs when used, are pinned for reproducible actions within the run. Legacy empty snapshots cannot be reconstructed from zero inserted rows: repeated nonempty snapshots can also insert zero rows.
+In assenza delle colonne audit migrate, il notebook 07 mantiene il comportamento storico basato sulle righe. La presenza parziale dei nuovi campi fa fallire la validazione. Le versioni Delta sorgente, inclusa ingestion_runs quando usata, sono fissate per azioni riproducibili nella run. Le snapshot legacy vuote non si possono ricostruire da zero righe inserite: anche snapshot non vuote ripetute possono inserire zero righe.
 
-No enrichment is run in PR2. Applying new empty-snapshot evidence requires a separately authorized notebook 07 refresh, which can legitimately change alert context after such a snapshot; dependent features must then be refreshed separately. Existing outputs and historical labels/models/Gold are untouched. This fixes future availability semantics rather than silently changing current analytical results.
+PR2 non esegue enrichment. Applicare le nuove evidenze di snapshot vuota richiede un refresh del notebook 07 autorizzato separatamente, che può legittimamente cambiare il contesto degli alert dopo tale snapshot; le feature dipendenti devono poi essere aggiornate separatamente. Output esistenti ed etichette/modelli/Gold storici restano intatti. Si corregge la semantica di disponibilità futura senza cambiare implicitamente i risultati analitici correnti.
 
-## Offline validation and runtime follow-up
+## Validazione offline e verifiche runtime successive
 
-Tests extract production function definitions with AST, avoiding notebook top-level execution. Mocked protobuf-like objects and in-memory DataFrame doubles cover header metadata, zero entities, decode/error paths, source/batch status, audit failures, explicit retry IDs, null-safe anti-join and duplicate conflicts. They do not replace an actual protobuf/Spark/Delta integration test.
+I test estraggono le definizioni delle funzioni di produzione tramite AST, evitando l'esecuzione del notebook al livello principale. Oggetti simulati simili a protobuf e sostituti DataFrame in memoria coprono metadati header, zero entità, percorsi di decodifica/errore, stato sorgente/batch, errori audit, ID espliciti di retry, anti-join null-safe e conflitti di duplicati. Non sostituiscono un vero test di integrazione protobuf/Spark/Delta.
 
-Runtime validation below covers schema compatibility, nonempty FULL feeds, audit persistence and append integrity. Remaining follow-up: same-snapshot retries in an isolated Spark/Delta environment, real protobuf empty/Differential integration, notebook 07 fixture execution without a downstream refresh, and failure notification delivery. Do not execute the existing notebook 04 exploration cells as a deployment procedure. No new package is required by the runtime implementation.
+La validazione runtime seguente copre compatibilità dello schema, feed FULL non vuoti, persistenza audit e integrità degli append. Verifiche successive residue: retry della stessa snapshot in ambiente Spark/Delta isolato, integrazione reale protobuf per feed vuoti/Differential, esecuzione delle fixture del notebook 07 senza refresh downstream e consegna delle notifiche di errore. Non eseguire le celle esplorative del notebook 04 esistente come procedura di deployment. L'implementazione runtime non richiede nuovi package.
 
 
-## Controlled runtime rollout evidence
+## Evidenze del rollout runtime controllato
 
-Main deployed: `ae7f9ef11724daaf7bb1cd3e9530673d1c7ef9a8` (PR2 merge). All three deployed sources were re-exported and compared with main. The existing runtime 05/07 exports matched the PR1 baseline exactly before replacement; their prior object IDs and source backups were retained in the operator evidence bundle. Notebook 99 was absent from this runtime folder and was created from main. Notebook 04 remains unscheduled/exploratory; 06 and 08+ were not changed.
+Main distribuito: `ae7f9ef11724daaf7bb1cd3e9530673d1c7ef9a8` (merge PR2). Tutte e tre le sorgenti distribuite sono state riesportate e confrontate con main. Gli export runtime 05/07 esistenti coincidevano esattamente con la baseline PR1 prima della sostituzione; ID precedenti degli oggetti e copie delle sorgenti sono stati conservati nel pacchetto di evidenze dell'operatore. Il notebook 99 era assente dalla cartella runtime ed è stato creato da main. Il notebook 04 resta non pianificato/esplorativo; 06 e 08+ non sono cambiati.
 
-Workspace folder: the existing project notebook folder.
+Cartella workspace: cartella esistente dei notebook del progetto.
 
-| Notebook | Runtime action |
+| Notebook | Azione runtime |
 | --- | --- |
-| `05_gtfs_realtime_pipeline` | Updated and executed by its existing Job |
-| `07_gtfs_realtime_enrichment` | Updated only; no enrichment execution |
-| `99_realtime_pipeline_health_check` | Created; all seven SQL cells executed through the SQL warehouse |
+| `05_gtfs_realtime_pipeline` | Aggiornato ed eseguito dal suo Job esistente |
+| `07_gtfs_realtime_enrichment` | Solo aggiornato; nessuna esecuzione dell'enrichment |
+| `99_realtime_pipeline_health_check` | Creato; tutte e sette le celle SQL eseguite tramite SQL warehouse |
 
-### Migration and rollback baseline
+### Migrazione e baseline di rollback
 
-The stable pre-migration `ingestion_runs` version was **10501**, with **10,173 rows** and the seven legacy fields listed above. DESCRIBE TABLE EXTENDED, table properties, recent Delta history and the latest 20 audit records were captured before migration. The additive ALTER created version **10502** without changing the row count; all nine new columns were NULL on all 10,173 legacy records. No backfill, property change, OPTIMIZE or VACUUM was requested. Existing automatic Delta optimization appeared in the pre-rollout history and was not initiated by this rollout.
+La versione stabile di `ingestion_runs` prima della migrazione era **10501**, con **10,173 righe** e i sette campi legacy elencati sopra. DESCRIBE TABLE EXTENDED, proprietà della tabella, storico Delta recente e ultimi 20 record audit sono stati acquisiti prima della migrazione. L'ALTER additivo ha creato la versione **10502** senza cambiare il conteggio righe; tutte e nove le nuove colonne erano NULL su tutti i 10,173 record legacy. Non sono stati richiesti backfill, modifiche delle proprietà, OPTIMIZE o VACUUM. L'ottimizzazione automatica Delta esistente compariva nello storico precedente al rollout e non è stata avviata da questo rollout.
 
-After the manual run the audit was version **10507**, with **10,178 rows**: precisely five new records. The seven original columns retain their names/types and the nine additions retain the documented types.
+Dopo la run manuale l'audit era alla versione **10507**, con **10,178 righe**: esattamente cinque nuovi record. Le sette colonne originali conservano nomi/tipi e le nove aggiunte conservano i tipi documentati.
 
-Rollback was not needed. The prepared recovery point is audit version 10501 plus the exported prior notebook sources. If rollback becomes necessary, pause the trigger and wait for active runs, preserve subsequent audit evidence, restore the old writer together with the compatible audit schema/data using a separately authorized `RESTORE TABLE rome_transport.bronze.ingestion_runs TO VERSION AS OF 10501`, then re-import the saved 05/07 sources. Notebook 99 was newly created, so it has no prior revision. Time Travel availability must be rechecked before recovery; restoration would remove post-baseline audit records from the current view, so it is not an automatic or lossless operational rollback. Bronze entity rows need no rollback for this append-only successful run. Do not resume the legacy writer against the extended schema without validating append compatibility.
+Non è servito rollback. Il punto di recupero preparato è la versione audit 10501 insieme agli export delle sorgenti notebook precedenti. Se il rollback diventasse necessario, sospendere il trigger e attendere le run attive, preservare le evidenze audit successive, ripristinare il vecchio writer insieme a schema/dati audit compatibili usando un `RESTORE TABLE rome_transport.bronze.ingestion_runs TO VERSION AS OF 10501` autorizzato separatamente, poi reimportare le sorgenti 05/07 salvate. Il notebook 99 era nuovo, quindi non ha revisione precedente. La disponibilità Time Travel va riverificata prima del recupero; il ripristino rimuoverebbe dalla vista corrente i record audit successivi alla baseline, quindi non è un rollback operativo automatico o senza perdita. Le entità Bronze non richiedono rollback per questa run riuscita in solo append. Non riprendere il writer legacy sullo schema esteso senza validare la compatibilità dell'append.
 
-### Manual run and audit outcomes
+### Run manuale ed esiti audit
 
-Controlled Job run 588842343799032 (runtime evidence retained privately) completed SUCCESS. Task run: 401724133439920. Logical batch: `b5ea5cf1-e87a-4c3b-bf9b-5b452ea33076`; attempt: `b72364ae-cfe2-4138-8042-7c443a3d5994`.
+La run Job controllata 588842343799032 (evidenze runtime conservate privatamente) è terminata SUCCESS. Run del task: 401724133439920. Batch logico: `b5ea5cf1-e87a-4c3b-bf9b-5b452ea33076`; tentativo: `b72364ae-cfe2-4138-8042-7c443a3d5994`.
 
-Exactly one BATCH RUNNING, three SOURCE SUCCESS and one terminal BATCH SUCCESS were persisted. Every source had the same non-null batch/attempt IDs, a positive feed timestamp, `FULL_DATASET`, `DECODED`, `is_empty=false` and NULL error fields.
+Sono stati persistiti esattamente un BATCH RUNNING, tre SOURCE SUCCESS e un BATCH SUCCESS terminale. Ogni sorgente aveva gli stessi ID batch/tentativo non NULL, timestamp feed positivo, `FULL_DATASET`, `DECODED`, `is_empty=false` e campi di errore NULL.
 
-| Source | Feed timestamp | Entities | Parsed rows | Appended | Duplicates |
+| Sorgente | Timestamp feed | Entità | Righe analizzate | Aggiunte | Duplicati |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | trip_updates | 1792938901 | 700 | 13,514 | 13,480 | 34 |
 | vehicle_positions | 1792939051 | 667 | 667 | 667 | 0 |
 | service_alerts | 1792938901 | 128 | 128 | 128 | 0 |
 
-The 34 discarded Trip Update rows demonstrate duplicate elimination within this input; they are not a same-snapshot retry test.
+Le 34 righe Trip Update scartate dimostrano l'eliminazione di duplicati in questo input; non costituiscono un test di retry della stessa snapshot.
 
-### Bronze integrity
+### Integrità Bronze
 
-The baseline was captured after the last old-writer scheduled run had terminated and while the trigger was paused.
+La baseline è stata acquisita dopo la conclusione dell'ultima run pianificata del vecchio writer e mentre il trigger era in pausa.
 
-| Table | Delta version before / after manual run | Rows before / after | Duplicate groups / excess rows, unchanged |
+| Tabella | Versione Delta prima / dopo la run manuale | Righe prima / dopo | Gruppi duplicati / righe eccedenti, invariati |
 | --- | --- | --- | --- |
 | trip_updates | 3874 / 3875 | 55,937,673 / 55,951,153 | 232,698 / 236,180 |
 | vehicle_positions | 3533 / 3534 | 2,898,974 / 2,899,641 | 138 / 138 |
 | service_alerts | 3501 / 3502 | 517,767 / 517,895 | 0 / 0 |
 
-All three entity schemas matched before/after. `EXCEPT ALL` from each pinned pre-run version to its pinned post-run version returned zero missing or changed rows, including payload and ingestion fields. Row-count deltas matched source rows_appended exactly. Grouping on the documented keys, including NULL keys, showed no duplicate growth. Historical duplicates were preserved, not repaired or hidden. Feed timestamps advanced from the previous snapshot.
+Tutti e tre gli schemi delle entità coincidevano prima/dopo. `EXCEPT ALL` dalla versione precedente fissata a quella successiva fissata di ogni tabella ha restituito zero righe mancanti o modificate, inclusi payload e campi di ingestion. Gli incrementi dei conteggi coincidevano esattamente con rows_appended delle sorgenti. Il raggruppamento sulle chiavi documentate, incluse le chiavi NULL, non ha mostrato crescita dei duplicati. I duplicati storici sono stati preservati, non riparati o nascosti. I timestamp del feed sono avanzati rispetto alla snapshot precedente.
 
-### Job, health checks and remaining limits
+### Job, controlli di stato e limiti residui
 
-Job **195066091322974** still has one task pointing to notebook 05, a 10-minute periodic trigger, `max_concurrent_runs=1`, queue enabled and the original failure email notification. The trigger was temporarily PAUSED, an already-started old-writer run was allowed to finish, and the original UNPAUSED trigger was restored. A complete comparison of Job settings before and after restoration matched exactly. No compute, task, retry or notification configuration was changed permanently.
+Il Job **195066091322974** ha ancora un task che punta al notebook 05, trigger periodico di 10 minuti, `max_concurrent_runs=1`, coda abilitata e notifica email di errore originale. Il trigger è stato temporaneamente PAUSED, una run del vecchio writer già avviata è stata lasciata terminare e il trigger originale UNPAUSED è stato ripristinato. Il confronto completo delle impostazioni Job prima e dopo il ripristino coincideva esattamente. Nessuna configurazione di compute, task, retry o notifiche è stata modificata permanentemente.
 
-All seven notebook 99 SQL cells succeeded. Source queries excluded `__batch__`; latest success/failure remained available across legacy and new rows; SOURCE details and both BATCH events were visible. Successful-empty query executed successfully with zero observations, which does not prove a live empty feed occurred.
+Tutte e sette le celle SQL del notebook 99 sono riuscite. Le query sorgente escludevano `__batch__`; ultimi successi/errori restavano disponibili tra righe legacy e nuove; erano visibili dettagli SOURCE ed entrambi gli eventi BATCH. La query sui feed vuoti riusciti è stata eseguita con successo con zero osservazioni: questo non prova che sia avvenuto un feed vuoto live.
 
-The 20 offline tests and notebook compilation passed again. FULL nonempty feeds and Spark/Delta production writes were observed. Valid empty FULL, rejected DIFFERENTIAL, null-safe same-snapshot retry, new attempt IDs under a supplied stable batch ID, and PARTIAL_SUCCESS/failure-after-audit remain supported by offline tests; no intentional production failure or replay was introduced. Failure email delivery was not exercised. No separate isolated Spark notebook was created. Notebook 07 was deployed but not executed, so its empty-alert timeline is code/offline-verified and existing enriched output remains unchanged.
+I 20 test offline e la compilazione dei notebook sono passati nuovamente. Sono stati osservati feed FULL non vuoti e scritture Spark/Delta in produzione. FULL vuoti validi, DIFFERENTIAL rifiutati, retry null-safe della stessa snapshot, nuovi ID di tentativo con ID batch stabile fornito e PARTIAL_SUCCESS/errore dopo audit restano supportati dai test offline; non sono stati introdotti intenzionalmente errori o replay in produzione. La consegna delle email di errore non è stata testata. Non è stato creato un notebook Spark isolato separato. Il notebook 07 è stato distribuito ma non eseguito, quindi la timeline degli alert vuoti è verificata tramite codice/test offline e l'output arricchito esistente resta invariato.
 
-ML training/scoring/registration, Gold, dashboard, Power BI and the app repository were untouched. No downstream refresh was run.
+Training/scoring/registrazione ML, Gold, dashboard, Power BI e repository dell'app non sono stati toccati. Nessun refresh downstream eseguito.
 
 
-### First scheduled observation after restoration
+### Prima osservazione pianificata dopo il ripristino
 
-Periodic run 1030587734568633 (runtime evidence retained privately) started automatically after trigger restoration and completed SUCCESS. It persisted the expected five records under new logical batch `6e821354-466c-4e97-a8f7-f2ed895fe9ef` and attempt `d0daff62-c731-412f-a022-a72cbe0bb8d9`. All three sources were SUCCESS, DECODED, FULL_DATASET, nonempty and without errors; terminal BATCH was SUCCESS.
+La run periodica 1030587734568633 (evidenze runtime conservate privatamente) è partita automaticamente dopo il ripristino del trigger ed è terminata SUCCESS. Ha persistito i cinque record attesi con nuovo batch logico `6e821354-466c-4e97-a8f7-f2ed895fe9ef` e tentativo `d0daff62-c731-412f-a022-a72cbe0bb8d9`. Tutte e tre le sorgenti erano SUCCESS, DECODED, FULL_DATASET, non vuote e senza errori; il BATCH terminale era SUCCESS.
 
-| Source | Entities | Parsed | Appended | Duplicates |
+| Sorgente | Entità | Analizzate | Aggiunte | Duplicati |
 | --- | ---: | ---: | ---: | ---: |
 | trip_updates | 684 | 13,627 | 13,579 | 48 |
 | vehicle_positions | 684 | 684 | 684 | 0 |
 | service_alerts | 128 | 128 | 128 | 0 |
 
-Each new feed timestamp was newer than the manual run. No duplicate keys were present in these new snapshots, and total row-count increments matched the three append counts. This confirms operational scheduled ingestion within the observed window, not a guarantee against future feed or infrastructure failures. The offline-only limitations above remain open; no additional production replay or failure injection was used.
+Ogni nuovo timestamp feed era più recente di quello della run manuale. Nelle nuove snapshot non erano presenti chiavi duplicate e gli incrementi totali delle righe coincidevano con i tre conteggi di append. Questo conferma l'ingestion pianificata operativa nella finestra osservata, non garantisce assenza di futuri errori dei feed o dell'infrastruttura. I limiti verificati solo offline sopra indicati restano aperti; non sono stati usati ulteriori replay in produzione o iniezioni di errore.

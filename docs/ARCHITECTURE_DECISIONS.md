@@ -1,69 +1,73 @@
-# Architecture decisions
+# Decisioni architetturali
 
-## ADR-001: operational ML outside Databricks Free Edition
+## ADR-001: ML operativo esterno a Databricks Free Edition
 
-**Accepted: 25 October 2026.** Operational ML target: **EXTERNAL PYTHON BACKEND TARGET**.
-Spark ML status: **HISTORICAL / EXPERIMENTAL ML - RESEARCH / REFERENCE IMPLEMENTATION**.
-This decision replaces the proposed PR4 production deployment path; it does not invalidate
-the historical experiments, TEST metrics or replay predictions.
+**Stato: accettata il 25 ottobre 2026.** Target ML operativo: **backend Python esterno**.
+Stato Spark ML: **ML storico / sperimentale - implementazione di ricerca / riferimento**.
+Questa decisione sostituisce il percorso di deployment operativo proposto in PR4; non invalida
+gli esperimenti storici, le metriche TEST o le previsioni del replay.
 
-### Evidence and decision
+### Evidenze e decisione
 
-The workspace is Free Edition, serverless-only. Its observed Spark Connect session
-could not construct `VectorAssembler`: the minimal serialization smoke stopped with
-`Py4JSecurityException` (constructor whitelist), before model fit or serialization.
-Setting explicit MLflow tracking URI `databricks` and registry URI `databricks-uc`
-allowed experiment selection, run creation and parameter logging. Tracking success
-did not establish model persistence. An isolated Volume write probe also passed.
+Il workspace è Free Edition e dispone solo di compute serverless. Nella sessione Spark Connect
+osservata non è stato possibile costruire `VectorAssembler`: lo smoke test minimo di
+serializzazione si è fermato con `Py4JSecurityException` (whitelist dei costruttori), prima
+del fit o della serializzazione. Impostare esplicitamente l'URI di tracking MLflow
+`databricks` e quello del registro `databricks-uc` ha consentito selezione dell'esperimento,
+creazione della run e logging dei parametri. Il tracking riuscito non ha dimostrato la
+persistenza del modello. È passato anche un test di scrittura isolata su Volume.
 
-The single authorized 16.4 LTS ML CPU Dedicated compute creation was rejected:
+L'unica richiesta autorizzata di creazione di compute Dedicated 16.4 LTS ML CPU è stata rifiutata:
 `Current organization ... does not have any associated worker environments`.
-No classic cluster was created, no production fit ran and no production PR4 artifact
-was persisted or reloaded. No compute remains running from that attempt. Historical
-Spark/MLflow experiments and failed smoke evidence are preserved outside public debug dumps.
+Non è stato creato alcun cluster classic, non è stato eseguito alcun fit operativo e nessun
+artifact operativo PR4 è stato persistito o ricaricato. Nessun compute di quel tentativo è
+rimasto attivo. Gli esperimenti storici Spark/MLflow e le evidenze dello smoke test fallito
+sono conservati al di fuori dei dump di debug pubblici.
 
-We choose a runtime boundary that works without paid classic compute: Databricks
-prepares and serves versioned data contracts; a future FastAPI/Python/scikit-learn
-backend owns operational training, evaluation, persistence, loading and inference.
-No automatic conversion of the historical Spark Random Forest is intended. Algorithms,
-preprocessing, calibration, hyperparameters and probability thresholds require new
-temporal evaluation. This PR supplies contracts and SQL generators, not a running backend.
+Scegliamo un confine del runtime che non richieda compute classic a pagamento: Databricks
+prepara ed espone contratti dati versionati; un futuro backend FastAPI/Python/scikit-learn
+gestisce training, valutazione, persistenza, caricamento e inference del modello operativo.
+Non è prevista la conversione automatica della Random Forest Spark storica. Algoritmi,
+preprocessing, calibrazione, iperparametri e soglie di probabilità richiedono una nuova
+valutazione temporale. Questa PR fornisce contratti e generatori SQL, non un backend in esecuzione.
 
-### Responsibilities
+### Responsabilità
 
-| Component | Ownership |
+| Componente | Responsabilità |
 | --- | --- |
-| This Databricks repository | GTFS ingestion, Delta Bronze/Silver, causal features, labels, analytics, Gold, data contracts and freshness metadata |
-| Future `rome-mobility-intelligence` repository | FastAPI, sklearn training/evaluation, complete fitted artifacts/config, immutable model versions, loading, inference and APIs |
-| n8n, in the future repository | Cross-system schedule, readiness checks, backend invocation, bounded retry, alerts and workflow definitions/exports |
-| React + Google AI Studio | App frontend; Google AI Studio generates/iterates UX/UI, React consumes APIs and displays provenance/freshness |
-| Databricks AI/BI / Power BI | Lakehouse analytics; Power BI remains a separate planned presentation, not the app |
+| Questo repository Databricks | Ingestion GTFS, Delta Bronze/Silver, feature causali, etichette, analytics, Gold, contratti dati e metadati sulla freschezza dei dati (freshness) |
+| Futuro repository `rome-mobility-intelligence` | FastAPI, training/valutazione sklearn, artifact completi del modello e configurazione, versioni immutabili del modello, caricamento, inference e API |
+| n8n, nel futuro repository | Pianificazione tra sistemi, controlli di readiness, invocazione del backend, retry limitati, alert e definizioni/export dei workflow |
+| React + Google AI Studio | Frontend dell'app; Google AI Studio genera e itera la UX/UI, React consuma le API e mostra provenienza e freshness |
+| Databricks AI/BI / Power BI | Analytics del lakehouse; Power BI resta una presentazione separata pianificata, non l'app |
 
-The future app repository is not created or initialized by this PR. Public documentation
-uses the repository name rather than a developer's local filesystem location.
+Questa PR non crea né inizializza il futuro repository dell'app. La documentazione pubblica
+usa il nome del repository anziché il percorso locale del filesystem dello sviluppatore.
 
-### Consequences and acceptance
+### Conseguenze e criteri di accettazione
 
-Historical notebooks 09-12 and PR4 helpers/callers remain available with their original
-logic and disabled PR4 gates. Their Spark-specific contracts are reference evidence,
-not future operational deployment instructions. Shared observable preparation remains
-the source of the 47 raw features. The existing hash includes historical preprocessing
-settings: retain it for input provenance, and give the future sklearn artifact its own
-preprocessing/artifact version. Do not claim Spark/sklearn model equivalence.
+I notebook storici 09-12 e gli helper/chiamanti PR4 restano disponibili con logica originale
+e gate PR4 disabilitati. I loro contratti specifici Spark sono evidenze di riferimento,
+non istruzioni per il futuro deployment operativo. La preparazione condivisa dei dati
+osservabili resta la sorgente delle 47 feature grezze. L'hash esistente include impostazioni
+di preprocessing storiche: va mantenuto come provenienza degli input, mentre il futuro
+artifact sklearn avrà una propria versione di preprocessing/artifact. Non si dichiara
+equivalenza tra i modelli Spark e sklearn.
 
-No core target component requires Spark ML persistence or UC model registration.
-Implementation is still future work, with explicit acceptance gates rather than a claim
-of present end-to-end operation. Free Edition quotas and the external backend's hosting
-remain availability constraints; there is no commercial SLA or promise of continuous live service.
-Fresh downstream data, a newly evaluated model, persisted artifact reload/parity and
-independent inference must pass before any live operational claim.
+Nessun componente fondamentale del target richiede persistenza Spark ML o registrazione
+del modello in UC. L'implementazione resta futura, con criteri di accettazione espliciti,
+senza dichiarare un funzionamento end-to-end attuale. Le quote Free Edition e l'hosting
+del backend esterno restano vincoli di disponibilità; non esistono uno SLA commerciale
+o una promessa di servizio live continuo. Prima di qualsiasi dichiarazione operativa live
+devono passare i controlli su dati downstream aggiornati, nuovo modello valutato,
+ricaricamento/parità dell'artifact persistito e inference indipendente.
 
-See [handoff contracts, access, measurements and rollout](OPERATIONAL_ML_HANDOFF.md),
-[roadmap](ROADMAP.md) and [dashboard audit](../dashboard/databricks/README.md).
+Vedi [contratti di handoff, accesso, misure e rollout](OPERATIONAL_ML_HANDOFF.md),
+[roadmap](ROADMAP.md) e [audit dashboard](../dashboard/databricks/README.md).
 
-### Sources
+### Fonti
 
-- [Free Edition limitations](https://docs.databricks.com/aws/en/getting-started/free-edition-limitations): serverless-only compute, one small SQL warehouse, fair-use quotas and no SLA.
-- [Statement Execution API](https://docs.databricks.com/api/statement-execution/v1/statement-execution): supported SQL access and chunked result formats.
-- The controlled runtime observations above were recorded on 25 October 2026; they
-  describe this workspace, not a universal limitation of all Spark ML deployments.
+- [Limiti Free Edition](https://docs.databricks.com/aws/en/getting-started/free-edition-limitations): solo compute serverless, un SQL warehouse piccolo, quote di utilizzo equo e nessuno SLA.
+- [Statement Execution API](https://docs.databricks.com/api/statement-execution/v1/statement-execution): accesso SQL supportato e formati dei risultati suddivisi in chunk.
+- Le osservazioni runtime controllate sopra riportate sono state registrate il 25 ottobre
+  2026; descrivono questo workspace, non un limite universale di tutti i deployment Spark ML.

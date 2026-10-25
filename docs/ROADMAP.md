@@ -1,28 +1,30 @@
-# Operational roadmap
+# Roadmap operativa
 
-Decision: [ADR-001](ARCHITECTURE_DECISIONS.md). Contracts and acceptance criteria:
-[operational handoff](OPERATIONAL_ML_HANDOFF.md). Each runtime rollout needs separate
-authorization; this PR performs repository changes and read-only data verification only.
+Decisione: [ADR-001](ARCHITECTURE_DECISIONS.md). Contratti e criteri di accettazione:
+[handoff operativo](OPERATIONAL_ML_HANDOFF.md). Ogni rollout runtime richiede
+un'autorizzazione separata; questa PR modifica il repository e verifica i dati solo in lettura.
 
-| Order | Deliverable | Acceptance / ownership |
+| Ordine | Risultato previsto | Criteri di accettazione / responsabilità |
 | --- | --- | --- |
-| A | Operational ML handoff (this PR) | Frozen raw input contracts, measured export strategy, historical/operational separation, dashboard audit; no backend |
-| B | Databricks downstream freshness/orchestration | Measured, version-pinned 05 -> 06 -> 07 -> current-scoring 08; quality/readiness manifest, retries/no-overlap and approved freshness SLA; separate runtime rollout |
-| C | Create `rome-mobility-intelligence` | Future separate repository; FastAPI/sklearn, n8n definitions, React/UI; not created by this PR |
-| D | Python training/evaluation/persistence | Capacity-based curated dataset, temporal purging, new selection/calibration/threshold validation, immutable complete artifact and native reload/parity |
-| E | FastAPI inference | Independent input-only path, validated model/contract, freshness checks, unknown/NULL tests and no fit at inference |
-| F | Prediction history | Idempotent append/release, model/threshold/source lineage, reconciliation, evaluation maturity; never overwrite reference replay silently |
-| G | n8n orchestration | Readiness polling, idempotent backend calls, retry/backoff/alerts; no duplicate ingestion schedule or Spark transformations |
-| H | Serving/API completion | Version-coherent Gold/readiness/model/prediction resources, explicit stale/unavailable states, pagination/auth |
-| I | React + Google AI Studio | Accessible light institutional frontend consuming APIs; Google AI Studio UX/UI generation/iteration, no fabricated live data |
-| J | AI insight layer | Evidence-linked summaries with source dates and freshness, after API/data quality acceptance |
-| K | Power BI | Separate portfolio presentation over curated Gold; not the operational app |
+| A | Handoff ML operativo (questa PR) | Contratti degli input grezzi congelati, strategia di export basata su misure, separazione storico/operativo, audit dashboard; nessun backend |
+| B | Freshness e orchestrazione downstream Databricks | Catena misurata, con versioni fissate, 05 -> 06 -> 07 -> 08 di preparazione degli input di scoring; manifest qualità/readiness, retry/assenza di sovrapposizioni e SLA di freshness approvato; rollout runtime separato |
+| C | Creazione di `rome-mobility-intelligence` | Futuro repository separato; FastAPI/sklearn, definizioni n8n, React/UI; non creato da questa PR |
+| D | Training/valutazione/persistenza Python | Dataset curato dimensionato sulla capacità, purging temporale, nuova selezione/calibrazione/validazione della soglia, artifact completo immutabile e ricaricamento nativo/parità |
+| E | Inference FastAPI | Percorso indipendente basato solo sugli input, modello/contratto validati, controlli di freshness, test su categorie sconosciute/NULL e nessun fit durante inference |
+| F | Storico delle prediction | Append/rilascio idempotenti, lineage di modello/soglia/sorgente, riconciliazione, maturazione della valutazione; nessuna sovrascrittura silenziosa del replay di riferimento |
+| G | Orchestrazione n8n | Polling della readiness, chiamate backend idempotenti, retry/backoff/alert; nessuna duplicazione della pianificazione ingestion o delle trasformazioni Spark |
+| H | Completamento serving/API | Risorse Gold/readiness/modello/prediction coerenti per versione, stati espliciti di dati non aggiornati/non disponibili, paginazione/autenticazione |
+| I | React + Google AI Studio | Frontend istituzionale chiaro e accessibile che consuma API; generazione/iterazione UX/UI con Google AI Studio, nessun dato live inventato |
+| J | Livello di insight AI | Sintesi collegate alle evidenze, con date delle sorgenti e freshness, dopo l'accettazione delle API e della qualità dei dati |
+| K | Power BI | Presentazione portfolio separata su Gold curato; non l'app operativa |
 
-Dashboard text/config alignment is repository-prepared in A. Live draft deployment,
-publish, PDF export and affected screenshot replacement are a separate authorized rollout
-described [here](../dashboard/databricks/README.md). Until then the binaries are historical
-evidence with disclosed known issues, not current architecture documentation.
+L'allineamento di testi/configurazione dashboard è preparato nel repository in A.
+Deployment del draft live, publish, export PDF e sostituzione degli screenshot interessati
+richiedono un rollout separato autorizzato, descritto [qui](../dashboard/databricks/README.md).
+Fino ad allora i file binari sono evidenze storiche con problemi noti dichiarati,
+non documentazione dell'architettura corrente.
 
-No new numbered Spark production PR5 is implied: prediction persistence belongs to F
-after the external model is evaluated. Existing PR1-PR4 history, tests and notebooks remain
-research/reference evidence. No component in the target requires paid classic ML compute.
+Non si introduce una nuova PR5 numerata per il runtime operativo Spark: la persistenza
+delle prediction appartiene a F, dopo la valutazione del modello esterno. Storia PR1-PR4,
+test e notebook esistenti restano evidenze di ricerca/riferimento. Nessun componente
+del target richiede compute ML classic a pagamento.

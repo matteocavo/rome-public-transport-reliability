@@ -4,7 +4,7 @@ Un lakehouse Databricks per i feed del trasporto pubblico di Roma, con analisi s
 
 **Stack:** Databricks · Apache Spark / PySpark · Delta Lake · Unity Catalog · MLflow · Databricks SQL · Databricks AI/BI Dashboards · Python · SQL
 
-**Stato al 25 ottobre 2026:** ingestion Bronze pianificata e operativa; Silver/features/scoring fermi al 2 ottobre. Gold e dashboard documentano snapshot storiche. Persistence e Random Forest sono i risultati ML storici di riferimento. Il percorso Spark ML production è sostituito dal target esterno FastAPI/sklearn: contratti implementati in questo repository, backend ancora da realizzare. Nessuna previsione live dichiarata. [Decisione architetturale](docs/ARCHITECTURE_DECISIONS.md), [contratti e misure](docs/OPERATIONAL_ML_HANDOFF.md), [roadmap](docs/ROADMAP.md).
+**Stato al 25 ottobre 2026:** ingestion Bronze pianificata e operativa; Silver/features/scoring fermi al 2 ottobre. Gold e dashboard documentano snapshot storiche. Persistence e Random Forest sono i risultati ML storici di riferimento. Il percorso operativo Spark ML è sostituito dal target esterno FastAPI/sklearn: contratti implementati in questo repository, backend ancora da realizzare. Nessuna previsione live dichiarata. [Decisione architetturale](docs/ARCHITECTURE_DECISIONS.md), [contratti e misure](docs/OPERATIONAL_ML_HANDOFF.md), [roadmap](docs/ROADMAP.md).
 
 ## Anteprima Dashboard
 
@@ -38,7 +38,7 @@ Google AI Studio: futura generazione e iterazione UX/UI React
 Dashboard AI/BI / Power BI separato: analisi curate, con date esplicite
 ```
 
-Le tabelle Delta sono governate tramite Unity Catalog. La dashboard interroga esclusivamente Gold. Il diagramma descrive il target: solo ingestion è pianificata oggi; orchestrazione downstream, backend, n8n e frontend sono attività future. Il tracciamento MLflow e i notebook Spark restano **HISTORICAL / EXPERIMENTAL ML**, conservati come ricerca e riferimento. Spark PipelineModel non è il runtime production target: smoke bloccato dalla whitelist Spark Connect e classic compute non disponibile nel workspace Free. [ADR-001](docs/ARCHITECTURE_DECISIONS.md).
+Le tabelle Delta sono governate tramite Unity Catalog. La dashboard interroga esclusivamente Gold. Il diagramma descrive il target: solo ingestion è pianificata oggi; orchestrazione downstream, backend, n8n e frontend sono attività future. Il tracciamento MLflow e i notebook Spark restano **ML storico / sperimentale**, conservati come ricerca e riferimento. Spark PipelineModel non è il runtime operativo target: smoke bloccato dalla whitelist Spark Connect e classic compute non disponibile nel workspace Free. [ADR-001](docs/ARCHITECTURE_DECISIONS.md).
 
 ## Fonti dei dati
 
@@ -60,7 +60,7 @@ I file GTFS Static di riferimento rimangono localmente in `data/reference/gtfs_s
 | 10 | Confronto tra baseline ed esperimenti di regressione/classificazione |
 | 11 | Tuning su validation, selezione finale e valutazione TEST a decisioni congelate |
 | 12 | Tentativo storico di registrazione e replay batch; percorso di riferimento |
-| 12 common / 12a / 12b | Implementazione Spark di riferimento per persistenza/inference; gate OFF, percorso production sostituito |
+| 12 common / 12a / 12b | Implementazione Spark di riferimento per persistenza/inference; gate OFF, percorso operativo sostituito |
 | 13 | Analisi Gold, controlli di qualità e metadati di aggiornamento |
 | 99 | Controlli sullo stato della pipeline realtime |
 
@@ -148,7 +148,7 @@ Il confronto è **strettamente maggiore**: la soglia è stata fissata prima dell
 | ROC-AUC | 0.9690 |
 | PR-AUC | 0.9063 |
 
-**HISTORICAL REFERENCE TEST METRICS:** risultati Spark congelati, non prestazioni del futuro modello sklearn. `historical_model_threshold = 0.45`; la soglia del nuovo modello operativo dovrà essere validata nella nuova valutazione. Nessuna conversione automatica Spark RF → sklearn RF o equivalenza degli iperparametri è assunta.
+**Metriche TEST storiche di riferimento:** risultati Spark congelati, non prestazioni del futuro modello sklearn. `historical_model_threshold = 0.45`; la soglia del nuovo modello operativo dovrà essere validata nella nuova valutazione. Nessuna conversione automatica Spark RF → sklearn RF o equivalenza degli iperparametri è assunta.
 
 ### Contratto semantico: Ritardo ≥ 5 min
 
@@ -165,9 +165,9 @@ Le fasce di probabilità storiche sono: Basso `p < 0.20`, Medio `0.20 <= p <= 0.
 
 `current_status` è lo stato GTFS del veicolo, non una fascia di severità del ritardo. `is_currently_delayed_flag` indica `current_arrival_delay_seconds > 60`: è una feature distinta dal target ML. Persistence mantiene il delay corrente, con fallback **−71 secondi** per NULL/NaN. Colonne tecniche, formule e risultati restano invariati.
 
-**PR3 - rollout runtime validato il 25 ottobre 2026:** helper e notebook 08/scoring distribuiti dal merge `c343f1e`. Parità Spark old/new PASS su scope deterministico; staging `rome_transport.features.next_stop_delay_scoring` creata in Delta v0 con 24.797 righe e contratto invariato (42 numerical + 5 categorical). Nessun training o scoring modello eseguito. La sorgente è Silver v8, ultima snapshot del 2 ottobre: staging dell’ultimo input disponibile, non feed corrente fresco. Overwrite controllato, gate di default ancora disabilitato, nessuna prediction history. [Evidenze runtime, missingness e limiti](docs/CURRENT_SCORING.md).
+**PR3 - rollout runtime validato il 25 ottobre 2026:** helper e notebook 08/scoring distribuiti dal merge `c343f1e`. Parità Spark old/new PASS su scope deterministico; staging `rome_transport.features.next_stop_delay_scoring` creata in Delta v0 con 24.797 righe e contratto invariato (42 numeriche + 5 categoriche). Nessun training o scoring modello eseguito. La sorgente è Silver v8, ultima snapshot del 2 ottobre: staging dell’ultimo input disponibile, non feed corrente fresco. Overwrite controllato, gate di default ancora disabilitato, nessuno storico delle prediction. [Evidenze runtime, valori mancanti e limiti](docs/CURRENT_SCORING.md).
 
-**PR4 - implementazione Spark di riferimento:** `12a_fit_persist_final_classifier`, `12b_score_current_input` e helper conservano il disegno di persistenza completa e inference separata, con gate OFF. Il rollout ha verificato MLflow tracking, ma lo smoke Spark ML è fallito prima del fit; la richiesta di compute Dedicated è stata rifiutata. Nessun artifact production PR4 persistito o ricaricato. Il nuovo percorso operativo è esterno. [Stato e storia tecnica](docs/MODEL_SERVING.md).
+**PR4 - implementazione Spark di riferimento:** `12a_fit_persist_final_classifier`, `12b_score_current_input` e helper conservano il disegno di persistenza completa e inference separata, con gate OFF. Il rollout ha verificato MLflow tracking, ma lo smoke Spark ML è fallito prima del fit; la richiesta di compute Dedicated è stata rifiutata. Nessun artifact operativo PR4 persistito o ricaricato. Il nuovo percorso operativo è esterno. [Stato e storia tecnica](docs/MODEL_SERVING.md).
 
 ## Batch scoring e registrazione
 

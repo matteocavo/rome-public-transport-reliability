@@ -1,70 +1,79 @@
-# Dashboard source and historical exports
+# Sorgente dashboard ed export storici
 
-Audit date: 25 October 2026. [ADR-001](../../docs/ARCHITECTURE_DECISIONS.md)
-changes the operational ML target to FastAPI/sklearn, while existing Gold/ML results
-remain historical Spark evidence. No live dashboard, query, data, draft or published
-snapshot was edited by this PR.
+Data dell'audit: 25 ottobre 2026. [ADR-001](../../docs/ARCHITECTURE_DECISIONS.md)
+sposta il target ML operativo su FastAPI/sklearn, mentre i risultati Gold/ML esistenti
+restano evidenze Spark storiche. Questa PR non ha modificato dashboard, query, dati,
+draft o snapshot pubblicata nell'ambiente live.
 
-## Audit results and repository changes
+## Risultati dell'audit e modifiche nel repository
 
-The five-page JSON, complete PDF and all four screenshots were inspected, including
-PDF text and rendered page/screenshot overviews. They use the intended light institutional
-theme: white/light ivory, dark text, bordeaux/Pompeian red, gold/ochre, neutral greys.
-No palette, layout, dimensions, dataset names, chart encodings or visual identity changed.
+Sono stati ispezionati il JSON delle cinque pagine, il PDF completo e tutti e quattro gli
+screenshot, inclusi il testo PDF e le viste d'insieme delle pagine renderizzate e degli
+screenshot. Usano il tema istituzionale chiaro previsto: bianco/avorio chiaro, testo scuro,
+bordeaux/rosso pompeiano, oro/ocra, grigi neutri. Nessuna modifica a palette, layout,
+dimensioni, nomi dei dataset, codifiche grafiche o identità visiva.
 
-| Location | Existing claim / problem | Local JSON correction |
+| Posizione | Affermazione esistente / problema | Correzione nel JSON locale |
 | --- | --- | --- |
-| Overview, page 1 | Model risk for latest available update can imply current service | Explicit historical Spark replay, 2 October 2026, not live inference |
-| Predictive, page 4 | Most recent disruption risk can imply current predictions | Explicit historical Spark replay, 2 October 2026 |
-| Model, page 5 | Final model/deployment without historical scope | Historical Spark/Persistence; future external FastAPI/sklearn target |
-| Page 5 validation vs TEST | 83.74%/83.89% incorrectly described as validation vs TEST | Remove interpretation; values describe validation thresholds, historical TEST F1 remains 82.83% |
-| Page 5 threshold note | 0.45 could imply future backend default | Mark historical Spark threshold; sklearn threshold must be revalidated |
-| Page 5 Persistence note | RMSE 489s inconsistent with final historical TEST 401.8525s | Correct historical TEST MAE/RMSE; current-delay rule and -71s fallback |
-| Page 5 deployment dataset | Hardcoded configured scoring, ready dashboard and deferred Spark registration | Historical replay/refresh quality; external target, no live/deployed claim |
+| Panoramica, pagina 1 | Il rischio del modello per l'ultimo aggiornamento disponibile può suggerire un servizio corrente | Replay Spark esplicitamente storico, 2 ottobre 2026, non inference live |
+| Monitoraggio predittivo, pagina 4 | Il rischio di disservizio più recente può suggerire previsioni correnti | Replay Spark esplicitamente storico, 2 ottobre 2026 |
+| Modello, pagina 5 | Modello finale/deployment senza contesto storico | Spark/Persistence storici; futuro target esterno FastAPI/sklearn |
+| Pagina 5, validation e TEST | 83.74%/83.89% descritti erroneamente come validation e TEST | Rimossa l'interpretazione; i valori descrivono le soglie su validation, l'F1 TEST storico resta 82.83% |
+| Pagina 5, nota sulla soglia | 0.45 può suggerire un valore predefinito del futuro backend | Soglia Spark indicata come storica; soglia sklearn da rivalidare |
+| Pagina 5, nota Persistence | RMSE 489s incoerente con il TEST storico finale 401.8525s | MAE/RMSE TEST storici corretti; regola del ritardo corrente e fallback -71s |
+| Pagina 5, dataset deployment | Scoring configurato, dashboard pronta e registrazione Spark rinviata impostati nel testo | Replay/qualità del refresh storici; target esterno, nessuna affermazione di servizio live o modello operativo distribuito |
 
-The `model_deployment` query in the **repository JSON only** now describes the existing
-historical release and future architecture. It remains SELECT-only over Gold. Existing
-quality status is still shown, scoped to the historical refresh; no data/metric is rewritten.
-The old registry/refresh fields elsewhere remain historical metadata. Existing 0.45
-risk-band/target logic is preserved for the historical model, not transferred to sklearn.
+La query `model_deployment`, **solo nel JSON del repository**, descrive ora il rilascio
+storico esistente e l'architettura futura. Resta una query esclusivamente SELECT su Gold.
+Lo stato di qualità esistente viene ancora mostrato, riferito al refresh storico; nessun
+dato o metrica viene riscritto. I precedenti campi registro/refresh presenti altrove restano
+metadati storici. La logica esistente di fasce di rischio/target con 0.45 viene preservata
+per il modello storico, senza trasferirla a sklearn.
 
-## PDF and screenshot status
+## Stato di PDF e screenshot
 
-**Historical artifacts, pending replacement.** The committed PDF and screenshots predate
-these corrections. They are retained unchanged as historical portfolio evidence and are
-explicitly labeled as such in README/PACE. They are not the corrected JSON's rendered
-output and must not be presented as current architecture or live service. In particular,
-`model-performance.png` still contains the old deployment, F1 interpretation and RMSE notes;
-`predictive.png` and `overview.png` retain the ambiguous freshness wording.
+**Artifact storici, in attesa di sostituzione.** Il PDF e gli screenshot versionati precedono
+queste correzioni. Restano invariati come evidenze storiche del portfolio e sono indicati
+esplicitamente come tali in README/PACE. Non sono il risultato renderizzato del JSON
+corretto e non vanno presentati come architettura corrente o servizio live. In particolare,
+`model-performance.png` contiene ancora le vecchie note su deployment, interpretazione F1
+e RMSE; `predictive.png` e `overview.png` mantengono la formulazione ambigua sulla freshness.
 
-This PR cannot truthfully produce a new Databricks export without the separately authorized
-dashboard rollout. No PDF is synthesized to impersonate a published dashboard, and no
-text is painted onto the old screenshots. **Full PDF regeneration required: YES.**
-**Affected screenshot regeneration required: YES** (overview, predictive, model-performance).
-Propagation data/design is unchanged; preserve its screenshot unless export QA finds it
-needs replacement. The old PDF page 3 also shows a clipped KPI description: verify that
-existing export defect during rollout and fix only with explicit layout authorization.
+Questa PR non può produrre un nuovo export Databricks autentico senza il rollout dashboard
+autorizzato separatamente. Nessun PDF viene sintetizzato per simulare una dashboard
+pubblicata e nessun testo viene sovrapposto ai vecchi screenshot.
+**Rigenerazione del PDF completo necessaria: SÌ.**
+**Rigenerazione degli screenshot interessati necessaria: SÌ** (overview, predictive, model-performance).
+Dati/design della propagazione sono invariati; conservare lo screenshot a meno che il
+controllo qualità dell'export ne richieda la sostituzione. La pagina 3 del vecchio PDF mostra
+anche una descrizione KPI tagliata: verificare il difetto esistente durante il rollout
+e correggerlo solo con autorizzazione esplicita sul layout.
 
-## Separate authorized dashboard rollout
+## Rollout dashboard separato e autorizzato
 
-1. Back up the actual dashboard draft and published metadata/source; compare with the
-   committed baseline. Reconcile external edits before applying this JSON. Deploy only
-   reviewed text and SELECT-query changes; do not change Gold, model outputs or layout.
-2. Run the read-only dashboard datasets, compare historical values and dates. Check all
-   changed text at normal browser size and PDF export scale for clipping/readability.
-   If text needs more room, stop and obtain layout scope rather than silently redesign.
-3. Explicitly publish the corrected **current draft**. Re-read published metadata/source
-   and verify the modified notes/query are present in the published snapshot, not draft only.
-4. Export the complete five-page PDF from that published version in the light theme.
-   Verify all pages, target >=300s, historical p>0.45 scope, new threshold undecided,
-   historical dates, TEST values and external architecture notes.
-5. Replace `pdf/Affidabilita_Trasporto_Pubblico_Roma.pdf`. Regenerate overview, predictive
-   and model-performance PNGs from the real export, excluding page-number/browser chrome
-   as before and preserving dimensions: overview 2840x2340, predictive 2840x2970,
-   model-performance 2840x2180. Propagation is 2840x2160 if replacement proves necessary.
-6. Inspect the full-size outputs and confirm PDF/source/screenshot agreement. Update this
-   status and README/PACE captions only after actual replacement, then commit the artifact
-   changes in that rollout PR. No dashboard publish/exports occur in the current PR.
+1. Salvare una copia del draft effettivo e dei metadati/sorgenti pubblicati della dashboard;
+   confrontarli con la baseline versionata. Riconciliare le modifiche esterne prima di
+   applicare questo JSON. Distribuire solo le modifiche revisionate a testi e query SELECT;
+   non modificare Gold, output del modello o layout.
+2. Eseguire i dataset dashboard in sola lettura e confrontare valori e date storici.
+   Verificare tutti i testi modificati alla dimensione normale del browser e alla scala
+   dell'export PDF, controllando tagli e leggibilità. Se serve più spazio, fermarsi e
+   ottenere l'autorizzazione sul layout, senza ridisegnarlo implicitamente.
+3. Pubblicare esplicitamente il **draft corrente corretto**. Rileggere metadati/sorgenti
+   pubblicati e verificare che note/query modificate siano nella snapshot pubblicata,
+   non soltanto nel draft.
+4. Esportare il PDF completo di cinque pagine dalla versione pubblicata, in tema chiaro.
+   Verificare tutte le pagine, target >=300s, ambito storico di p>0.45, nuova soglia ancora
+   da decidere, date storiche, valori TEST e note sull'architettura esterna.
+5. Sostituire `pdf/Affidabilita_Trasporto_Pubblico_Roma.pdf`. Rigenerare i PNG overview,
+   predictive e model-performance dall'export reale, escludendo come prima numero di
+   pagina e interfaccia del browser e conservando le dimensioni: overview 2840x2340,
+   predictive 2840x2970, model-performance 2840x2180. Propagation è 2840x2160 se risulta
+   necessario sostituirlo.
+6. Ispezionare gli output a dimensione piena e confermare la corrispondenza fra PDF,
+   sorgente e screenshot. Aggiornare questo stato e le didascalie README/PACE solo dopo
+   la sostituzione effettiva, quindi includere gli artifact nel commit della PR di rollout.
+   Nessun publish/export dashboard avviene nella PR corrente.
 
-Power BI remains a separate planned presentation; it must use the same historical/current
-distinction and validated future threshold. It has no binary report to regenerate here.
+Power BI resta una presentazione separata pianificata; deve adottare la stessa distinzione
+storico/corrente e la futura soglia validata. Non esiste un report binario da rigenerare qui.

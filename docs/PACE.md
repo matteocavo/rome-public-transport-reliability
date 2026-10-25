@@ -15,10 +15,10 @@
 ## Quadro dell'implementazione — 25 ottobre 2026
 
 **Decisione corrente:** [ADR-001](ARCHITECTURE_DECISIONS.md) separa Databricks (ingestion,
-lakehouse, feature/data contract, analytics, Gold e freshness) dal futuro FastAPI/sklearn
+lakehouse, contratti delle feature e dei dati, analytics, Gold e freshness) dal futuro FastAPI/sklearn
 (training, nuova valutazione, artifact e inference). n8n orchestrerà i confini esterni;
-React/Google AI Studio saranno il frontend. Spark ML è **HISTORICAL / EXPERIMENTAL ML**:
-si conservano risultati e codice, ma non è più il runtime production target.
+React/Google AI Studio saranno il frontend. Spark ML è **ML storico / sperimentale**:
+si conservano risultati e codice, ma non è più il runtime operativo target.
 
 **Operativo oggi:** ingestion Bronze ogni 10 minuti. **Storico:** Silver, feature, scoring,
 Gold e valutazione Spark; staging validata al 2 ottobre. Il Job contiene solo 05:
@@ -32,7 +32,7 @@ Il documento mantiene il framework PACE e le motivazioni progettuali, distinguen
 
 **Scostamenti dal piano iniziale:** Persistence è la soluzione finale di regressione, perché la maggiore complessità non ha prodotto un miglioramento sufficiente in validazione. La raccolta avviene ogni 10 minuti, anziché ogni cinque come proposto inizialmente. Gold utilizza tabelle analitiche compatte per snapshot, al posto dei nomi dimensionali ipotizzati.
 
-**Percorso production sostituito:** persistenza Spark ML. MLflow tracking funziona con URI espliciti, ma lo smoke nativo fallisce sulla whitelist Spark Connect; classic Dedicated ML compute non è disponibile nell'organization Free. Il futuro modello operativo sarà valutato e persistito nel backend esterno, senza dipendere dalla registrazione UC. Scoring e metriche Spark restano storici.
+**Percorso operativo sostituito:** persistenza Spark ML. MLflow tracking funziona con URI espliciti, ma lo smoke nativo fallisce sulla whitelist Spark Connect; classic Dedicated ML compute non è disponibile nell'organization Free. Il futuro modello operativo sarà valutato e persistito nel backend esterno, senza dipendere dalla registrazione UC. Scoring e metriche Spark restano storici.
 
 **Contratto semantico corrente:** evento `next_stop_delay_ge_300s`, display “Ritardo ≥ 5 min”, target >=300 secondi invariato. La soglia Spark storica è strettamente p>0.45; la soglia del futuro modello deve essere rivalidata. Il JSON locale include le correzioni architetturali; PDF e screenshot restano export storici in tema chiaro, con issue esplicitamente documentate nell'audit.
 
@@ -545,7 +545,7 @@ Le transizioni usano le fasce −60/180/300 secondi della sezione 14; “Ritardo
 
 ---
 
-**PR3 - rollout runtime validato il 25 ottobre 2026:** helper e notebook 08/scoring distribuiti dal merge `c343f1e`. Parità Spark old/new PASS su scope deterministico; staging `rome_transport.features.next_stop_delay_scoring` creata in Delta v0 con 24.797 righe e contratto invariato (42 numerical + 5 categorical). Nessun training o scoring modello eseguito. La sorgente è Silver v8, ultima snapshot del 2 ottobre: staging dell’ultimo input disponibile, non feed corrente fresco. Overwrite controllato, gate di default ancora disabilitato, nessuna prediction history. [Evidenze runtime, missingness e limiti](CURRENT_SCORING.md).
+**PR3 - rollout runtime validato il 25 ottobre 2026:** helper e notebook 08/scoring distribuiti dal merge `c343f1e`. Parità Spark old/new PASS su scope deterministico; staging `rome_transport.features.next_stop_delay_scoring` creata in Delta v0 con 24.797 righe e contratto invariato (42 numeriche + 5 categoriche). Nessun training o scoring modello eseguito. La sorgente è Silver v8, ultima snapshot del 2 ottobre: staging dell’ultimo input disponibile, non feed corrente fresco. Overwrite controllato, gate di default ancora disabilitato, nessuno storico delle prediction. [Evidenze runtime, valori mancanti e limiti](CURRENT_SCORING.md).
 
 # 25. FEATURE ENGINEERING
 
@@ -972,7 +972,7 @@ xgboost_v1
 
 ---
 
-**PR4 - implementazione Spark di riferimento:** helper e notebook 12a/12b conservano il disegno di persistenza/inference separata, con gate OFF e test offline. Il rollout ha confermato tracking MLflow ma non ha superato lo smoke Spark ML; il compute Dedicated non è disponibile. Nessun artifact production persistito o ricaricato. Il percorso operativo è ora esterno. [Stato e storia tecnica](MODEL_SERVING.md).
+**PR4 - implementazione Spark di riferimento:** helper e notebook 12a/12b conservano il disegno di persistenza/inference separata, con gate OFF e test offline. Il rollout ha confermato tracking MLflow ma non ha superato lo smoke Spark ML; il compute Dedicated non è disponibile. Nessun artifact operativo persistito o ricaricato. Il percorso operativo è ora esterno. [Stato e storia tecnica](MODEL_SERVING.md).
 
 # 40. REGISTRAZIONE DEL MODELLO
 
@@ -982,7 +982,7 @@ Il nome previsto per il classificatore è `rome_transport.ml.major_delay_classif
 
 Tracciamento MLflow, selezione finale e scoring sono completati. Il notebook 12 mantiene la pipeline completa di preprocessing e classificazione nel percorso di scoring attivo e registra i metadati del tentativo in `rome_transport.ml.model_registry_metadata`. Gli errori inattesi non sono trattati silenziosamente come limitazioni note di Serverless.
 
-La persistenza Spark non è più uno sviluppo del target production. I notebook restano riferimento; persistenza e reload del nuovo modello saranno implementati nel backend sklearn. Gli alias `candidate`/`champion` erano un disegno iniziale e non sono distribuiti.
+La persistenza Spark non è più uno sviluppo del target operativo. I notebook restano riferimento; persistenza e reload del nuovo modello saranno implementati nel backend sklearn. Gli alias `candidate`/`champion` erano un disegno iniziale e non sono distribuiti.
 
 ---
 
@@ -1456,7 +1456,7 @@ Il modello di Machine Learning è una componente del progetto, non il progetto n
 
 ## Stato finale ed estensioni
 
-Il percorso storico è implementato fino a replay, Gold e dashboard autenticata; ingestion è pianificata, downstream stale. Il target operativo esterno è definito ma non implementato. JSON locale corretto, PDF/screenshot precedenti da sostituire dopo rollout autorizzato; Power BI resta separato. Dati, target, modelli e metriche storiche non vengono ricalcolati.
+Il percorso storico è implementato fino a replay, Gold e dashboard autenticata; ingestion è pianificata, dati downstream non aggiornati. Il target operativo esterno è definito ma non implementato. JSON locale corretto, PDF/screenshot precedenti da sostituire dopo rollout autorizzato; Power BI resta separato. Dati, target, modelli e metriche storiche non vengono ricalcolati.
 
 ## Roadmap operativa corrente
 

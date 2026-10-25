@@ -1,149 +1,166 @@
-# Operational ML data and access handoff
+# Handoff di dati e accesso per il ML operativo
 
-Status: repository contract implemented; runtime data reads verified on 25 October 2026.
-The backend, new model and orchestrators are not implemented here. Architecture:
-[ADR-001](ARCHITECTURE_DECISIONS.md). Implementation order: [roadmap](ROADMAP.md).
+Stato: contratto implementato nel repository; letture dati runtime verificate il 25 ottobre 2026.
+Backend, nuovo modello e orchestratori non sono implementati qui. Architettura:
+[ADR-001](ARCHITECTURE_DECISIONS.md). Ordine di implementazione: [roadmap](ROADMAP.md).
 
-## Machine-readable contracts
+## Contratti machine-readable
 
-[`contracts/operational_ml.json`](../contracts/operational_ml.json) is the explicit
-training/inference/serving handoff. The standard-library module
-[`operational_ml.py`](../contracts/operational_ml.py) generates SELECT-only projections;
-it has no network client, model, credentials, materialization or execution side effects.
+[`contracts/operational_ml.json`](../contracts/operational_ml.json) definisce esplicitamente
+l'handoff di training/inference/serving. Il modulo basato sulla libreria standard
+[`operational_ml.py`](../contracts/operational_ml.py) genera proiezioni esclusivamente SELECT;
+non contiene client di rete, modelli, credenziali, materializzazioni o effetti collaterali di esecuzione.
 
-Both exports preserve the exact ordered **47 raw features: 42 numerical + 5 categorical**.
-Categoricals: `route_id`, `route_type`, `direction_id`, `agency_id`, `current_status`.
-Names, order and raw types are checked against `08_common_feature_preparation` by tests.
-The retained input-provenance SHA-256 is:
+Entrambi gli export preservano esattamente l'ordine delle **47 feature grezze: 42 numeriche + 5 categoriche**.
+Categoriche: `route_id`, `route_type`, `direction_id`, `agency_id`, `current_status`.
+I test verificano nomi, ordine e tipi grezzi rispetto a `08_common_feature_preparation`.
+Lo SHA-256 mantenuto come provenienza degli input è:
 
 `11682b3cc1ab5c1d8440af4f6294e932e815126c3dd86ab609f4d5f8f35c41a5`
 
-That hash includes historical Spark preprocessing. It does not oblige sklearn to reproduce
-Spark's imputer/indexer/encoder or imply a matching learned vector. Optional feature NULLs
-remain NULL; no export-time fitting, imputation or dropping of optional inputs occurs.
-Future preprocessing is learned on training only, persisted with the estimator, and tested
-on unknown/NULL categories after reload. Infinity, missing columns and schema/hash drift fail validation.
+L'hash include il preprocessing Spark storico. Non obbliga sklearn a riprodurre
+imputer/indexer/encoder Spark e non implica un vettore appreso coincidente. I NULL delle
+feature opzionali restano NULL; durante l'export non avvengono fit, imputazione o rimozione
+di input opzionali. Il futuro preprocessing viene appreso solo sul training, persistito con
+l'estimatore e testato su categorie sconosciute/NULL dopo il ricaricamento. Valori infiniti,
+colonne mancanti e variazioni di schema/hash fanno fallire la validazione.
 
-### Training export
+### Export di training
 
-Logical source: `rome_transport.features.next_stop_delay_labeled`.
-Current validated version: **12**. Historical experiment reference: **8**.
-v8 is no longer readable under retention; subsequent VACUUM is recorded in history.
-v9-v12 contain maintenance/metadata operations, and v12's population/labels passed
-compatibility validation. This is evidence of logical compatibility, not a direct v8/v12
-full-row equivalence test. No automatic fallback to a newer Delta version is allowed.
+Sorgente logica: `rome_transport.features.next_stop_delay_labeled`.
+Versione corrente validata: **12**. Riferimento degli esperimenti storici: **8**.
+v8 non è più leggibile per i vincoli di retention; il successivo VACUUM è registrato nello storico.
+v9-v12 contengono operazioni di manutenzione/metadati e popolazione/etichette di v12 hanno
+superato la validazione di compatibilità. È un'evidenza di compatibilità logica, non un
+confronto diretto di equivalenza delle righe complete v8/v12. Non è consentito alcun
+fallback automatico a una versione Delta più recente.
 
-The explicit projection includes observation identity, service date/time, target next-stop
-identity, all raw features, realized delay/class label and label timestamp/horizon audit.
-Identity/labels/provenance are never estimator inputs. Metadata records source table/version,
-hash, split boundaries, label-availability cutoff, code SHA and export/sampling manifest.
+La proiezione esplicita include identità dell'osservazione, data/ora di servizio, identità
+della fermata successiva target, tutte le feature grezze, ritardo realizzato/etichetta di
+classe e audit di timestamp/orizzonte dell'etichetta. Identità/etichette/provenienza non
+sono mai input dell'estimatore. I metadati registrano tabella/versione sorgente, hash,
+confini delle partizioni, cutoff di disponibilità delle etichette, SHA del codice e
+manifest di export/campionamento.
 
-Business event: `next_stop_delay_ge_300s`, display **Ritardo ≥ 5 min**.
-Positive label: `target_realized_next_stop_delay_seconds >= 300`.
-Retain `ABS(delay) <= 43200`, valid observation keys, horizon 1-1800 seconds,
-`label_source_feed_timestamp > feed_timestamp` and exact horizon consistency.
-The stored class must equal the derived class; count rejected rows and fail release on
-unexpected exclusions rather than silently redefining the validated population.
+Evento di business: `next_stop_delay_ge_300s`, display **Ritardo ≥ 5 min**.
+Etichetta positiva: `target_realized_next_stop_delay_seconds >= 300`.
+Mantenere `ABS(delay) <= 43200`, chiavi di osservazione valide, orizzonte 1-1800 secondi,
+`label_source_feed_timestamp > feed_timestamp` e coerenza esatta dell'orizzonte.
+La classe memorizzata deve uguagliare quella derivata; contare le righe rifiutate e
+bloccare il rilascio per esclusioni inattese, senza ridefinire implicitamente la popolazione validata.
 
 `training_select(version=12, start_epoch=..., end_epoch=..., label_available_before=...)`
-requires explicit nonnegative integer bounds, half-open feed interval and a strict label
-availability cutoff. Every partition's input and accepted/excluded counts must be reconciled.
-For train, the label cutoff is the validation start; for validation, test start; for test,
-the observation-complete evaluation cutoff. Missing or duplicate keys block export release.
+richiede limiti interi non negativi espliciti, intervallo del feed semiaperto e cutoff
+stretto di disponibilità delle etichette. Riconciliare conteggi di input e righe
+accettate/escluse di ogni partizione. Per train, il cutoff delle etichette è l'inizio di
+validation; per validation, l'inizio di test; per test, il cutoff di valutazione entro
+cui le osservazioni sono complete. Chiavi mancanti o duplicate bloccano il rilascio dell'export.
 
-### Inference export
+### Export di inference
 
-Source: `rome_transport.features.next_stop_delay_scoring`; grain:
+Sorgente: `rome_transport.features.next_stop_delay_scoring`; granularità:
 `(feed_timestamp, entity_id, trip_id, stop_sequence, stop_id)`.
-Use `inference_select(version=..., feed_timestamp=...)`, pinning both values from one
-validated preparation. Never use `SELECT *`, the labeled table or a fallback older epoch.
+Usare `inference_select(version=..., feed_timestamp=...)`, fissando entrambi i valori da
+un'unica preparazione validata. Non usare mai `SELECT *`, la tabella etichettata o un
+fallback a un'epoca precedente.
 
-The allowlist is exactly PR3's observation, target next-stop, service/vehicle identity,
-47 features and four lineage fields: `source_silver_version`, `feature_prepared_at`,
-`feature_preparation_batch_id`, `feature_contract_hash`. Same-snapshot `target_*` identity
-is metadata, not future outcome. Export also adds pinned `export_source_version`,
-`exported_at` and `feed_age_seconds`; compare epochs in UTC and display Europe/Rome.
-There are **no future labels, realized outcomes, historical predictions or prediction outputs**.
+L'allowlist coincide esattamente con quella PR3: identità dell'osservazione, della fermata
+successiva target e di servizio/veicolo, 47 feature e quattro campi di lineage:
+`source_silver_version`, `feature_prepared_at`, `feature_preparation_batch_id`,
+`feature_contract_hash`. L'identità `target_*` nella stessa snapshot è un metadato,
+non un esito futuro. L'export aggiunge inoltre `export_source_version` fissata,
+`exported_at` e `feed_age_seconds`; confrontare le epoche in UTC e visualizzare Europe/Rome.
+Sono **assenti etichette future, esiti realizzati, previsioni storiche e output predittivi**.
 
-Validated snapshot: **v0, 24,797 rows, epoch 1790928849**, 2 October 2026 10:14:09
-Europe/Rome. This remains **HISTORICAL SCORING VALIDATION, NOT LIVE INFERENCE**.
-Missingness of some optional inputs/categories is approximately 75-79%; a valid schema
-does not establish acceptable model quality on this population.
+Snapshot validata: **v0, 24,797 righe, epoca 1790928849**, 2 ottobre 2026 10:14:09
+Europe/Rome. Resta una **validazione storica dello scoring, non inference live**.
+L'incidenza dei valori mancanti per alcuni input/categorie opzionali è circa 75-79%; uno
+schema valido non dimostra una qualità del modello accettabile su questa popolazione.
 
-Backend release checks: exact schema/order/hash; one non-null preparation lineage/epoch;
-expected row count, non-null/unique observation keys, next sequence > current sequence;
-no labels; no infinite numerics; no future-dated source/preparation; feed age and
-preparation age inside an explicitly approved SLA. An SLA is not invented in this PR.
-Stale/empty/incomplete data returns an explicit unavailable/stale response and never
-silently masquerades as current. Preparation time alone cannot prove fresh source data.
+Controlli di rilascio del backend: schema/ordine/hash esatti; una sola lineage/epoca di
+preparazione non NULL; conteggio atteso, chiavi di osservazione non NULL/uniche, sequenza
+successiva > sequenza corrente; nessuna etichetta; nessun valore numerico infinito;
+sorgente/preparazione non future; anzianità del feed e della preparazione entro uno SLA
+approvato esplicitamente. Questa PR non inventa uno SLA. Dati non aggiornati/vuoti/incompleti
+restituiscono uno stato esplicito di indisponibilità o mancato aggiornamento e non vengono
+mai presentati implicitamente come correnti. Il solo orario di preparazione non prova che
+la sorgente sia aggiornata.
 
-## Recommended access: SQL Statement Execution API
+## Accesso consigliato: SQL Statement Execution API
 
-Use the existing serverless SQL warehouse and authenticated HTTPS
-`POST /api/2.0/sql/statements` with SELECT/DESCRIBE/SHOW only. No new connector/SDK,
-cluster or file export is necessary. Small metadata responses use INLINE JSON_ARRAY.
-Large feature exports use **EXTERNAL_LINKS + ARROW_STREAM**, bounded by a byte budget.
-Official [API contract](https://docs.databricks.com/api/statement-execution/v1/statement-execution)
-and [chunk download guide](https://docs.databricks.com/aws/en/dev-tools/sql-execution-tutorial).
+Usare il SQL warehouse serverless esistente e HTTPS autenticato
+`POST /api/2.0/sql/statements` con sole SELECT/DESCRIBE/SHOW. Non sono necessari nuovi
+connector/SDK, cluster o export di file. Le risposte di metadati piccole usano INLINE
+JSON_ARRAY. Gli export di feature grandi usano **EXTERNAL_LINKS + ARROW_STREAM**, con
+un budget in byte. [Contratto API](https://docs.databricks.com/api/statement-execution/v1/statement-execution)
+e [guida al download dei chunk](https://docs.databricks.com/aws/en/dev-tools/sql-execution-tutorial) ufficiali.
 
-Observed read-only probes: pinned training v12 aggregates succeeded; pinned scoring v0
-read succeeded; Gold executive overview read succeeded. A two-row/five-key scoring query
-returned one Arrow chunk (1,840 bytes), not truncated; its signed URL downloaded with HTTP
-200 using no Authorization header. This proves this channel works now, not full-volume
-export throughput, future backend authentication or unattended renewal. Only the existing
-local authenticated profile was used; no token or signed URL is committed or logged publicly.
-Both generated contract SELECTs also succeeded against pinned versions (two-row probes):
-67 training columns and 70 inference columns including export/freshness metadata.
+Test osservati in sola lettura: aggregati del training v12 fissato riusciti; lettura dello
+scoring v0 fissato riuscita; lettura Gold della panoramica esecutiva riuscita. Una query
+di scoring su due righe/cinque chiavi ha restituito un chunk Arrow (1,840 byte), senza
+troncamento; l'URL firmato è stato scaricato con HTTP 200 senza header Authorization.
+Questo prova che il canale funziona ora, non il throughput di un export completo,
+l'autenticazione del futuro backend o il rinnovo senza intervento umano. È stato usato
+solo il profilo locale autenticato esistente; nessun token o URL firmato è versionato
+o registrato pubblicamente. Anche entrambe le SELECT generate dai contratti sono riuscite
+sulle versioni fissate (test su due righe): 67 colonne di training e 70 di inference,
+inclusi i metadati di export/freschezza dei dati (freshness).
 
-Future backend requirements:
+Requisiti del futuro backend:
 
-1. Supply host/warehouse/auth via private deployment configuration. Use a supported
-   workspace authentication method that is actually available to that account; validate
-   unattended renewal before enabling scheduling. Interactive developer authentication
-   alone is not proof of service availability. Never expose credentials to React/n8n logs.
-2. Submit fixed projections and bound parameters/validated integer versions. Pin every
-   source once. Poll PENDING/RUNNING to a terminal status with timeout and cancellation;
-   retry transient transport/rate/quota failures with bounded backoff, not schema failures.
-3. Fetch all manifest chunks and verify schema, total rows/bytes, contiguous offsets,
-   uniqueness and `truncated == false`. INLINE has a 25 MiB limit; chunked external
-   results support up to 100 GiB. An explicit row/byte cap can truncate: reject partial
-   exports. Polling or fetching must not silently apply the audit helper's 1,000-row limit.
-4. Download short-lived signed external links without forwarding Databricks Authorization.
-   Links are secrets and expire within 15 minutes; renew through the API as necessary.
-   Decode Arrow in bounded batches, preserving nullable integer categories, UTC timestamps
-   and dates. Validate each chunk and the final manifest before promoting a cached dataset.
-5. Cache a successful immutable export once per table/version/projection/split/sampling
-   manifest. Store interoperable Arrow/Parquet outside Git in the future backend's storage.
-   Subsequent training reuses that validated export; do not download ten million rows per fit.
+1. Fornire host/warehouse/autenticazione tramite configurazione privata di deployment.
+   Usare un metodo di autenticazione del workspace supportato ed effettivamente disponibile
+   nell'account; verificarne il rinnovo senza intervento umano prima di abilitare la
+   pianificazione. La sola autenticazione interattiva dello sviluppatore non prova la
+   disponibilità del servizio. Non esporre credenziali ai log React/n8n.
+2. Inviare proiezioni fisse e parametri associati/versioni intere validate. Fissare ogni
+   sorgente una volta. Eseguire polling di PENDING/RUNNING fino a uno stato terminale con
+   timeout e annullamento; ritentare errori transitori di trasporto/limiti di frequenza/quote
+   con backoff limitato, non gli errori di schema.
+3. Recuperare tutti i chunk del manifest e verificare schema, righe/byte totali, offset
+   contigui, unicità e `truncated == false`. INLINE ha un limite di 25 MiB; i risultati
+   esterni suddivisi in chunk supportano fino a 100 GiB. Un limite esplicito di righe/byte
+   può troncare i risultati: rifiutare export parziali. Polling o recupero non devono
+   applicare implicitamente il limite di 1,000 righe dell'helper di audit.
+4. Scaricare i link esterni firmati a breve durata senza inoltrare Authorization di Databricks.
+   I link sono segreti e scadono entro 15 minuti; rinnovarli tramite API quando necessario.
+   Decodificare Arrow in batch limitati, preservando categorie intere nullable, timestamp
+   UTC e date. Validare ogni chunk e il manifest finale prima di promuovere un dataset in cache.
+5. Memorizzare in cache un export immutabile riuscito una sola volta per manifest di
+   tabella/versione/proiezione/partizioni/campionamento. Salvare Arrow/Parquet interoperabile
+   fuori da Git nello storage del futuro backend. I training successivi riusano l'export
+   validato; non scaricare dieci milioni di righe per ogni fit.
 
-Warehouse auto-start from a SELECT is normal read execution; this audit changed no warehouse
-settings. Free Edition has one 2X-Small warehouse, fair-use quotas and no SLA. Do not claim
-commercial production uptime. Backend hosting, credentials and capacity acceptance are
-separate deployment work, with explicit tests rather than an assumed available service.
+L'avvio automatico del warehouse provocato da una SELECT è normale esecuzione in lettura;
+questo audit non ne ha modificato le impostazioni. Free Edition dispone di un warehouse
+2X-Small, quote di utilizzo equo e nessuno SLA. Non dichiarare disponibilità commerciale
+di produzione. Hosting, credenziali e accettazione della capacità del backend sono attività
+di deployment separate, con test espliciti anziché un servizio presunto disponibile.
 
-## Measured training footprint and selection strategy
+## Dimensioni misurate del training e strategia di selezione
 
-Pinned v12 measurements (full-table server-side aggregates; no bulk local download):
+Misure su v12 fissata (aggregati lato server sull'intera tabella; nessun download locale massivo):
 
-| Measure | Result |
+| Misura | Risultato |
 | --- | ---: |
-| Eligible rows | 9,975,703 |
+| Righe ammissibili | 9,975,703 |
 | Positive / negative | 1,878,569 / 8,097,134 |
-| Positive fraction | 18.8314% |
-| Service dates / routes / trips / vehicles | 8 / 412 / 82,936 / 2,157 |
-| Feed epochs | 964 |
-| Active Delta files / compressed full-table bytes | 23 / 1,207,872,358 |
-| 47-feature JSON string-array footprint, mean / maximum bytes per row | 337.134 / 405 |
-| Date × route × feed_hour × class nonempty strata | 60,856 |
-| Stratum rows: minimum / p10 / median / p90 / maximum | 1 / 9 / 97 / 403 / 1,816 |
+| Quota positiva | 18.8314% |
+| Date di servizio / linee / corse / veicoli | 8 / 412 / 82,936 / 2,157 |
+| Epoche del feed | 964 |
+| File Delta attivi / byte compressi dell'intera tabella | 23 / 1,207,872,358 |
+| Dimensione JSON delle 47 feature come array di stringhe, byte medi / massimi per riga | 337.134 / 405 |
+| Strati non vuoti data × linea × feed_hour × classe | 60,856 |
+| Righe per strato: minimo / p10 / mediana / p90 / massimo | 1 / 9 / 97 / 403 / 1,816 |
 
-The JSON estimate casts feature values to strings and includes NULLs; it is a proxy,
-not Arrow bytes, pandas RAM or artifact size. It implies about **3.36 GB** feature-only
-transfer before metadata. A dense float64 matrix of 42 numerics alone is **3.35 GB**;
-the historical 475-dimensional dense vector would be **37.91 GB**, before copies or
-estimator overhead. Neither is a recommendation to construct it.
+La stima JSON converte i valori delle feature in stringhe e include i NULL; è un proxy,
+non una misura dei byte Arrow, della RAM pandas o dell'artifact. Implica circa **3.36 GB**
+di trasferimento delle sole feature prima dei metadati. Una matrice densa float64 delle
+sole 42 numeriche occupa **3.35 GB**; il vettore denso storico a 475 dimensioni occuperebbe
+**37.91 GB**, prima di copie o overhead dell'estimatore. Nessuna delle due misure è una
+raccomandazione a costruire tale matrice.
 
-| Service date | Negative | Positive | Negative / positive routes | Negative / positive hours |
+| Data di servizio | Negative | Positive | Linee negative / positive | Ore negative / positive |
 | --- | ---: | ---: | --- | --- |
 | 2026-09-25 | 756,150 | 200,639 | 370 / 308 | 16 / 16 |
 | 2026-09-26 | 1,040,654 | 245,536 | 371 / 313 | 24 / 24 |
@@ -154,139 +171,153 @@ estimator overhead. Neither is a recommendation to construct it.
 | 2026-10-01 | 1,384,897 | 332,251 | 373 / 328 | 24 / 24 |
 | 2026-10-02 | 421,206 | 49,458 | 335 / 247 | 7 / 7 |
 
-Recommendation: create a separately authorized curated Delta training release with
-immutable version/manifest, then cache one bounded export. Do not materialize anything
-in this PR. No sampling percentage, model or final row budget has been selected.
+Raccomandazione: creare un rilascio curato di training Delta autorizzato separatamente,
+con versione/manifest immutabili, quindi memorizzare in cache un export limitato.
+Non materializzare nulla in questa PR. Non sono stati selezionati percentuale di
+campionamento, modello o budget finale di righe.
 
-The next training-design change must:
+La prossima modifica al disegno del training deve:
 
-1. Assign **all distinct feed epochs chronologically** to train/validation/test before
-   sampling, keeping tied epochs together. Freeze boundaries without looking at TEST
-   performance; purge labels not yet available at the next partition boundary. Preserve
-   causal full-history feature preparation before any sampling; never recompute histories
-   on the sampled subset or current snapshot alone.
-2. Measure a bounded Arrow pilot's bytes/row, nullable/sparse preprocessing expansion,
-   peak resident memory and fit memory for actual candidate implementations on the chosen
-   backend host. Derive row capacity from the host's usable memory minus measured overhead
-   and an explicit reserve, plus transfer/time budgets. Record the measured capacity;
-   no naive full-table `toPandas()` and no unsupported guessed sampling percentage.
-3. Within TRAIN only, allocate deterministic proportional quotas over observed
-   date/route/hour/class strata, preserving each nonempty stratum when capacity allows.
-   Rank by a recorded seed and stable observation-key hash with full-key tie-break.
-   Record exact SQL/hash algorithm, quotas, inclusion probabilities, source version,
-   rejected rows and selected key checksum. If a minimum-one quota exceeds capacity,
-   fail the proposed budget and revise the design explicitly; do not silently lose routes,
-   dates, rare positives or hours. Minimum quotas can alter class proportions: document
-   sampling weights and evaluate weighting choices on validation.
-4. Preserve natural class prevalence in complete temporal validation/TEST when capacity
-   permits, or use an independently specified reproducible evaluation sample with
-   inclusion weights and reported uncertainty. Stratification must never move observations
-   across temporal partitions. Report coverage and both classes for each partition.
-5. Select model/preprocessing/calibration and threshold using TRAIN/validation only; use
-   untouched later dates for the new final TEST. Eight historical dates and previously
-   assessed TEST data cannot establish new independent generalization. Persist the complete
-   sklearn pipeline with its own provenance and prove reload/parity before inference.
+1. Assegnare **tutte le epoche distinte del feed in ordine cronologico** a train/validation/test
+   prima del campionamento, mantenendo unite le epoche coincidenti. Congelare i confini
+   senza osservare le prestazioni TEST; escludere con purging le etichette non ancora
+   disponibili al confine con la partizione successiva. Preservare la preparazione causale
+   delle feature sull'intero storico prima di qualsiasi campionamento; non ricalcolare
+   mai lo storico sul sottoinsieme campionato o soltanto sulla snapshot corrente.
+2. Misurare byte/riga di un test pilota Arrow limitato, espansione del preprocessing
+   nullable/sparso, picco di memoria residente e memoria del fit delle implementazioni
+   candidate effettive sull'host backend scelto. Derivare la capacità in righe dalla memoria
+   utilizzabile dell'host meno overhead misurato e riserva esplicita, oltre ai budget di
+   trasferimento/tempo. Registrare la capacità misurata; nessun `toPandas()` ingenuo
+   sull'intera tabella e nessuna percentuale di campionamento ipotizzata senza evidenze.
+3. Solo all'interno di TRAIN, allocare quote proporzionali deterministiche sugli strati
+   osservati data/linea/ora/classe, preservando ogni strato non vuoto quando la capacità
+   lo consente. Ordinare tramite seed registrato e hash stabile della chiave di osservazione,
+   usando la chiave completa per risolvere i pareggi. Registrare SQL/algoritmo hash esatti,
+   quote, probabilità di inclusione, versione sorgente, righe rifiutate e checksum delle
+   chiavi selezionate. Se la quota minima di una riga supera la capacità, rifiutare il budget
+   proposto e rivedere esplicitamente il disegno; non perdere implicitamente linee, date,
+   positivi rari od ore. Le quote minime possono alterare le proporzioni di classe:
+   documentare i pesi di campionamento e valutare le scelte di pesatura su validation.
+4. Preservare la prevalenza naturale delle classi nella validation/TEST temporale completa
+   quando la capacità lo consente, oppure usare un campione di valutazione riproducibile
+   specificato indipendentemente, con pesi di inclusione e incertezza riportata.
+   La stratificazione non deve mai spostare osservazioni tra partizioni temporali.
+   Riportare copertura ed entrambe le classi per ogni partizione.
+5. Selezionare modello/preprocessing/calibrazione e soglia usando solo TRAIN/validation;
+   usare date successive non ancora utilizzate per il nuovo TEST finale. Otto date storiche
+   e dati TEST già valutati non dimostrano nuova generalizzazione indipendente. Persistire
+   l'intera pipeline sklearn con la propria provenienza e provare ricaricamento/parità prima di inference.
 
-## Semantics and historical evidence
+## Semantica ed evidenze storiche
 
-`historical_model_threshold = 0.45`, comparison **strict >** (ties negative).
-`future_operational_model_threshold = null`: **to be validated from new model evaluation**.
-The target's 300 seconds does not change. Historical risk bands and flag logic remain
-reference display rules, not calibrated guarantees or automatic thresholds for sklearn.
+`historical_model_threshold = 0.45`, confronto **strettamente >** (uguaglianza negativa).
+`future_operational_model_threshold = null`: **da validare nella valutazione del nuovo modello**.
+I 300 secondi del target non cambiano. Fasce di rischio e logica del flag storiche restano
+regole di visualizzazione di riferimento, non garanzie calibrate o soglie automatiche per sklearn.
 
-**HISTORICAL REFERENCE TEST METRICS**, Spark Random Forest only:
+**Metriche TEST storiche di riferimento**, solo Spark Random Forest:
 Accuracy 0.9401; precision 0.8450; recall 0.8123; F1 0.8283; ROC-AUC 0.9690; PR-AUC 0.9063.
-Persistence regression remains historical reference (MAE 136.9818s, RMSE 401.8525s,
-R² 0.6940, WAPE 0.3293). None is attributed to an untrained external model.
+La regressione Persistence resta un riferimento storico (MAE 136.9818s, RMSE 401.8525s,
+R² 0.6940, WAPE 0.3293). Nessuna metrica è attribuita a un modello esterno non addestrato.
 
-## Freshness gap and internal orchestration design
+## Divario di freshness e disegno dell'orchestrazione interna
 
-The read-only Job inventory contains one scheduled ingestion Job, with **one task pointing
-to 05**, periodic 10 minutes, unpaused. There are no 06/07/08 task dependencies or other
-listed downstream Jobs. Notebook 05 only appends Bronze/audit; it never invokes downstream
-notebooks. Notebook 06 overwrites Silver outputs when explicitly executed; 07 pins inputs
-and overwrites enrichment; `08_current_scoring_dataset` requires an explicit disabled-by-default
-staging-write gate. No Delta commit automatically runs these notebooks.
+L'inventario Job in sola lettura contiene un solo Job di ingestion pianificato, con
+**un solo task che punta a 05**, periodico ogni 10 minuti e non in pausa. Non risultano
+dipendenze dei task 06/07/08 o altri Job downstream nell'elenco. Il notebook 05 esegue
+solo append Bronze/audit e non invoca notebook downstream. Il notebook 06 sovrascrive
+gli output Silver quando viene eseguito esplicitamente; 07 fissa gli input e sovrascrive
+l'arricchimento; `08_current_scoring_dataset` richiede un gate esplicito di scrittura
+staging, disabilitato per default. Nessun commit Delta esegue automaticamente questi notebook.
 
-Observed latest Bronze Trip Update epoch **1792960055** (25 October); Silver observations,
-enrichment and staging all remain **1790928849** (2 October). Enrichment is v8 and staging
-v0. This establishes missing downstream orchestration, not an ingestion outage. It does
-not prove every source is continuously healthy. Existing Gold/model results are historical.
+Ultima epoca Bronze Trip Update osservata: **1792960055** (25 ottobre); osservazioni Silver,
+arricchimento e staging restano tutti a **1790928849** (2 ottobre). L'arricchimento è v8
+e lo staging v0. Questo dimostra l'assenza di orchestrazione downstream, non un'interruzione
+dell'ingestion. Non prova che ogni sorgente sia continuamente sana. I risultati Gold/modello
+esistenti sono storici.
 
-Proposed separately authorized Databricks task chain:
+Catena di task Databricks proposta, da autorizzare separatamente:
 
 ```text
-05 ingestion + terminal audit
-  -> verify required source success / explicit partial-source policy
+05 ingestion + audit terminale
+  -> verifica successo sorgenti richieste / politica esplicita per sorgenti parziali
   -> 06 Silver
-  -> 07 enrichment (causal positions <=180s; empty-alert evidence)
-  -> 08_current_scoring_dataset (shared 08 helper; write gate explicitly authorized)
-  -> validate and publish readiness manifest
+  -> 07 enrichment (posizioni causali <=180s; evidenze di feed alert vuoto)
+  -> 08_current_scoring_dataset (helper 08 condiviso; gate di scrittura autorizzato esplicitamente)
+  -> validazione e pubblicazione del manifest di readiness
 ```
 
-Do not run the old training 08 adapter, 09 labeling or 10-12 ML on the ingestion cadence.
-Training releases/label maturity use a separate offline workflow. Gold descriptive refresh
-and future prediction-serving refresh are separate, versioned releases; do not run the
-current 13 unchanged against external model outputs. It currently assumes historical
-Spark metadata/threshold and writes eight tables.
+Non eseguire il vecchio adapter 08 di training, 09 di etichettatura o 10-12 ML alla cadenza
+dell'ingestion. Rilasci di training/maturazione delle etichette usano un workflow offline
+separato. Refresh Gold descrittivo e futuro refresh del serving predittivo sono rilasci
+separati e versionati; non eseguire l'attuale 13 invariato sugli output di modelli esterni.
+Attualmente assume metadati/soglia Spark storici e scrive otto tabelle.
 
-Before enabling this DAG: back up sources/Jobs, measure full-history 06/07/feature cost
-against the 10-minute interval and Free quotas; resolve 06's unpinned multi-source reads,
-session timezone and known historical duplicate handling; reconcile versions and reject
-ambiguous keys. Implement pinned batch/source versions and a single writer, coordinate
-with ongoing ingestion, bounded task retries, idempotent same-batch handling, no-overlap
-and notification checks. Do not promise a ten-minute downstream SLA before measuring it.
-If full rebuild cost is excessive, implement and parity-test incremental history/state in
-a separate change before enabling a schedule. Silver full-table overwrites are not incremental.
+Prima di abilitare questo DAG: salvare copie di sorgenti/Job, misurare il costo di
+06/07/feature sull'intero storico rispetto all'intervallo di 10 minuti e alle quote Free;
+risolvere le letture multisorgente non fissate di 06, il fuso orario di sessione e la
+gestione dei duplicati storici noti; riconciliare le versioni e rifiutare chiavi ambigue.
+Implementare versioni fissate di batch/sorgenti e un solo writer, coordinamento con
+l'ingestion attiva, retry limitati dei task, gestione idempotente dello stesso batch,
+assenza di sovrapposizioni e controlli delle notifiche. Non promettere uno SLA downstream
+di dieci minuti prima di misurarlo. Se il costo della ricostruzione completa è eccessivo,
+implementare e testare la parità di storico/stato incrementale in una modifica separata
+prima di abilitare la pianificazione. Gli overwrite Silver completi non sono incrementali.
 
-Readiness must carry preparation batch/hash, Bronze/Silver/staging versions, source/feed
-watermarks, counts, quality status and completion instant. Publish only after all checks;
-partially committed tables are not a successful release. Keep a last-good manifest for
-diagnosis but mark it stale when the SLA fails. No new readiness table is created here.
+La readiness deve includere batch/hash di preparazione, versioni Bronze/Silver/staging,
+watermark di sorgenti/feed, conteggi, stato di qualità e istante di completamento.
+Pubblicare solo dopo tutti i controlli; tabelle parzialmente aggiornate non costituiscono
+un rilascio riuscito. Conservare l'ultimo manifest valido per diagnosi, ma marcarlo come
+non aggiornato quando lo SLA non è rispettato. Qui non viene creata una nuova tabella di readiness.
 
-n8n checks this readiness and the approved freshness policy, deduplicates
-`(staging_version, preparation_batch_id, model_version)`, calls FastAPI, retries transient
-failures with the same idempotency key and alerts on stale/failed runs. It does not duplicate
-Databricks ingestion scheduling or perform Spark transformations. FastAPI rechecks the
-manifest before inference; n8n checks are not an integrity boundary. Prediction history
-and downstream serving commits require their own idempotent release contract.
+n8n verifica readiness e politica di freshness approvata, deduplica
+`(staging_version, preparation_batch_id, model_version)`, chiama FastAPI, ritenta errori
+transitori con la stessa chiave di idempotenza e genera alert per run non aggiornate/fallite.
+Non duplica la pianificazione ingestion Databricks né esegue trasformazioni Spark.
+FastAPI ricontrolla il manifest prima di inference; i controlli n8n non sono un confine
+di integrità. Storico delle prediction e commit del serving downstream richiedono un
+proprio contratto di rilascio idempotente.
 
-## Serving mapping and release boundary
+## Mappatura serving e confine di rilascio
 
-These are **future FastAPI resource names**, not existing endpoints. The same mapping is
-machine-readable in the JSON. All current Gold resources represent historical snapshots.
+Questi sono **nomi delle future risorse FastAPI**, non endpoint esistenti. La stessa
+mappatura è machine-readable nel JSON. Tutte le risorse Gold attuali sono snapshot storiche.
 
-| Databricks table | Future resource | Interpretation |
+| Tabella Databricks | Risorsa futura | Interpretazione |
 | --- | --- | --- |
-| `gold.executive_overview` | `/network/overview` | Network KPI snapshot; historical and prediction dates separate |
-| `gold.route_reliability` | `/reliability/routes` | Observation-weighted routes, minimum 1,000 observations for rankings |
-| `gold.stop_reliability` | `/reliability/stops` | Observation stop context, minimum 500 for rankings |
-| `gold.temporal_reliability` | `/reliability/temporal` | Service date/day/feed hour |
-| `features.next_stop_delay_scoring` | `/scoring/inputs` | Pinned observable input; currently historical |
-| `gold.predictive_operations` | `/predictions/reference` | Historical Spark replay, never current external predictions |
-| `gold.model_performance` | `/models/reference/evaluation` | Frozen historical metrics |
-| `ml.model_registry_metadata` | `/models/reference/metadata` | Historical model/run/attempt metadata |
-| `gold.analytics_refresh_metadata` | `/monitoring/analytics` | Refresh ID, source versions, Gold manifest |
-| `bronze.ingestion_runs` | `/monitoring/ingestion` | Append-only SOURCE/BATCH audit events |
+| `gold.executive_overview` | `/network/overview` | Snapshot KPI di rete; date storiche e delle previsioni separate |
+| `gold.route_reliability` | `/reliability/routes` | Linee ponderate per osservazione, minimo 1,000 osservazioni per i ranking |
+| `gold.stop_reliability` | `/reliability/stops` | Contesto della fermata osservata, minimo 500 per i ranking |
+| `gold.temporal_reliability` | `/reliability/temporal` | Data di servizio/giorno/ora del feed |
+| `features.next_stop_delay_scoring` | `/scoring/inputs` | Input osservabile con versione fissata; attualmente storico |
+| `gold.predictive_operations` | `/predictions/reference` | Replay Spark storico, mai previsioni correnti esterne |
+| `gold.model_performance` | `/models/reference/evaluation` | Metriche storiche congelate |
+| `ml.model_registry_metadata` | `/models/reference/metadata` | Metadati storici di modello/run/tentativo |
+| `gold.analytics_refresh_metadata` | `/monitoring/analytics` | ID del refresh, versioni sorgente, manifest Gold |
+| `bronze.ingestion_runs` | `/monitoring/ingestion` | Eventi di audit SOURCE/BATCH in solo append |
 
-All names above use catalog `rome_transport`. Verify `gold_versions_json` against actual
-Gold Delta versions before exposing a coherent release; pin each mapped table to that
-manifest. A successful quality flag is not proof of current freshness. Paginate/filter
-large resources with stable keys, allowlist queries and bound parameters; do not expose
-arbitrary SQL. Audit events are not uniquely keyed by attempt/status alone: retries,
-legacy NULL IDs and multiple terminal/failure events require event-aware aggregation.
+Tutti i nomi sopra usano il catalogo `rome_transport`. Verificare `gold_versions_json`
+rispetto alle versioni Delta Gold effettive prima di esporre un rilascio coerente;
+fissare ogni tabella della mappatura al manifest. Un flag di qualità positivo non prova
+la freshness corrente. Paginare/filtrare le risorse grandi con chiavi stabili, query in
+allowlist e parametri associati; non esporre SQL arbitrario. I soli tentativo/stato non
+identificano univocamente gli eventi di audit: retry, ID legacy NULL e più eventi
+terminali/di errore richiedono aggregazioni consapevoli degli eventi.
 
-Future operational predictions and model/evaluation endpoints must come from the new
-artifact/assessment and separately designed prediction history. No new serving table or
-endpoint is claimed here. Existing 17,177 historical predictions remain untouched and are
-not replaced by the 24,797 input rows. Schema, model version, validated threshold,
-freshness, identity, run lineage and release IDs must accompany future prediction output.
+Le future previsioni operative e gli endpoint modello/valutazione devono derivare dal
+nuovo artifact/valutazione e dallo storico delle prediction progettato separatamente.
+Non si dichiara qui una nuova tabella serving o un endpoint. Le 17,177 previsioni storiche
+esistenti restano intatte e non sono sostituite dalle 24,797 righe di input. Schema,
+versione del modello, soglia validata, freshness, identità, lineage della run e ID di
+rilascio devono accompagnare il futuro output predittivo.
 
-## Separate runtime acceptance
+## Accettazione runtime separata
 
-No Job, notebook execution, downstream table, model, dashboard live definition or publish
-is changed by this PR. Needed next: authorize and validate the downstream DAG above;
-approve backend hosting/auth/capacity; release a curated export; implement/evaluate/persist
-and reload the external model; independent inference; then prediction history, serving
-adaptation and n8n. Dashboard source corrections and required PDF/screenshot replacement
-are tracked in the [dashboard audit](../dashboard/databricks/README.md).
+Questa PR non modifica Job, esecuzioni di notebook, tabelle downstream, modelli, definizioni
+dashboard live o publish. Attività successive necessarie: autorizzare e validare il DAG
+downstream sopra; approvare hosting/autenticazione/capacità del backend; rilasciare un
+export curato; implementare/valutare/persistire e ricaricare il modello esterno; inference
+indipendente; poi storico delle prediction, adattamento serving e n8n. Correzioni alla
+sorgente dashboard e sostituzione necessaria di PDF/screenshot sono tracciate
+nell'[audit dashboard](../dashboard/databricks/README.md).
