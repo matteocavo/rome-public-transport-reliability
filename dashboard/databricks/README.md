@@ -5,7 +5,7 @@ sposta il target ML operativo su FastAPI/sklearn, mentre i risultati Gold/ML esi
 restano evidenze Spark storiche. Questa PR non ha modificato dashboard, query, dati,
 draft o snapshot pubblicata nell'ambiente live.
 
-## Risultati dell'audit e modifiche nel repository
+## Risultati dell'audit e modifiche al repository
 
 Sono stati ispezionati il JSON delle cinque pagine, il PDF completo e tutti e quattro gli
 screenshot, inclusi il testo PDF e le viste d'insieme delle pagine renderizzate e degli
@@ -30,7 +30,7 @@ dato o metrica viene riscritto. I precedenti campi registro/refresh presenti alt
 metadati storici. La logica esistente di fasce di rischio/target con 0.45 viene preservata
 per il modello storico, senza trasferirla a sklearn.
 
-## Stato di PDF e screenshot
+## Stato del PDF e degli screenshot
 
 **Artifact storici, in attesa di sostituzione.** Il PDF e gli screenshot versionati precedono
 queste correzioni. Restano invariati come evidenze storiche del portfolio e sono indicati
@@ -49,7 +49,7 @@ controllo qualità dell'export ne richieda la sostituzione. La pagina 3 del vecc
 anche una descrizione KPI tagliata: verificare il difetto esistente durante il rollout
 e correggerlo solo con autorizzazione esplicita sul layout.
 
-## Rollout dashboard separato e autorizzato
+## Rollout separato e autorizzato della dashboard
 
 1. Salvare una copia del draft effettivo e dei metadati/sorgenti pubblicati della dashboard;
    confrontarli con la baseline versionata. Riconciliare le modifiche esterne prima di
