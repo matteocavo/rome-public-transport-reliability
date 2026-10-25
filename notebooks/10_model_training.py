@@ -4,6 +4,9 @@
 # MAGIC Build a preliminary regression and classification pipeline for Rome Public Transport Reliability & Delay Prediction using chronological evaluation and the future labels from notebook 09.
 # MAGIC This is a technically valid modeling workflow, but performance remains preliminary until substantially more realtime days are collected; no production model is registered.
 
+# MAGIC
+# MAGIC Classification estimates next_stop_delay_ge_300s (future next-stop GTFS-RT proxy >=300s). Display terminology does not redefine the label. Probability decision thresholds are separate from delay bands.
+
 # COMMAND ----------
 
 # MAGIC %md

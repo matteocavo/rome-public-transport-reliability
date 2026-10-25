@@ -23,6 +23,9 @@ jobs:
       - name: Validate Python notebook syntax
         run: python -m compileall -q notebooks
 
+      - name: Verify delay semantics without Spark
+        run: python -m unittest discover -s tests -p 'test_semantic_contract.py' -v
+
       - name: Verify required SQL notebooks
         run: |
           set -u

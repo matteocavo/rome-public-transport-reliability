@@ -4,9 +4,11 @@ Un progetto end-to-end su Databricks che trasforma i feed del trasporto pubblico
 
 **Stack:** Databricks · Apache Spark / PySpark · Delta Lake · Unity Catalog · MLflow · Databricks SQL · Databricks AI/BI Dashboards · Python · SQL
 
-**Stato al 7 ottobre 2026:** sono implementati il percorso dall'acquisizione dei dati alle analisi Gold e la dashboard Databricks su cinque pagine. Persistence è la soluzione finale di regressione; Random Forest è il classificatore finale. La registrazione del modello è rinviata per un limite dell'ambiente. Rimane da riconciliare una differenza tra le definizioni di ritardo grave adottate da ML e dashboard, descritta di seguito.
+**Stato al 25 ottobre 2026:** sono implementati il percorso dall'acquisizione dei dati alle analisi Gold e la dashboard Databricks su cinque pagine. Persistence è la soluzione finale di regressione; Random Forest è il classificatore finale. La registrazione del modello è rinviata per un limite dell'ambiente. Il contratto semantico corrente allinea il JSON dashboard e la documentazione all’evento ≥300 secondi; dati e modelli non vengono ricalcolati.
 
 ## Anteprima Dashboard
+
+**Aggiornamento semantico:** il JSON e i testi correnti usano “Ritardo ≥ 5 min”. PDF e screenshot sono aggiornati dal nuovo export in tema chiaro, con il contratto semantico corrente.
 
 <p align="center">
   <img src="dashboard/databricks/screenshots/overview.png"
@@ -16,7 +18,7 @@ Un progetto end-to-end su Databricks che trasforma i feed del trasporto pubblico
 
 ## Obiettivo del progetto
 
-Quanto ritardo è prevedibile alla fermata successiva? Qual è la probabilità di un ritardo grave? Quali linee, fermate e fasce orarie presentano i maggiori problemi di affidabilità?
+Quanto ritardo è prevedibile alla fermata successiva? Qual è la probabilità di un ritardo ≥ 5 min? Quali linee, fermate e fasce orarie presentano i maggiori problemi di affidabilità?
 
 Il progetto affronta queste domande integrando Data Engineering, Feature Engineering temporale, confronto con baseline, valutazione ML, analisi SQL e BI. È un progetto di portfolio orientato alle esigenze degli operatori della mobilità locale; non implica un'adozione operativa da parte di Roma Capitale.
 
@@ -140,39 +142,39 @@ Il confronto è **strettamente maggiore**: la soglia è stata fissata prima dell
 
 Sono risultati di valutazione congelati, non prestazioni ricalcolate sul riaddestramento con l'intero storico o sull'ultimo batch di scoring.
 
-### Definizioni distinte: target ML e severità operativa della dashboard
+### Contratto semantico: Ritardo ≥ 5 min
 
-Il classificatore ML è stato addestrato e valutato sul target `target_realized_major_delay_flag`: ritardo alla fermata successiva **>= 300 secondi**. Le metriche ML e le probabilità previste si riferiscono a questo target implementato.
+L'evento canonico `next_stop_delay_ge_300s` indica il **proxy GTFS-Realtime del ritardo alla fermata successiva >=300 secondi**. Il display è **Ritardo ≥ 5 min**, oppure **Ritardo alla fermata successiva ≥ 5 min**. `target_realized_major_delay_flag` vale 1 quando `target_realized_next_stop_delay_seconds >= 300`; `major_delay_probability` è la probabilità di questo evento. Il proxy è una futura osservazione del feed, non un arrivo certificato.
 
-La dashboard usa invece **Ritardo Grave > 600 secondi** nella tassonomia di severità operativa:
-
-| Stato nella dashboard | Ritardo in secondi |
+| Fascia di ritardo | Intervallo in secondi |
 | --- | --- |
-| In Anticipo | `< -60` |
-| Regolare | `-60 <= delay <= 300` |
-| Ritardo Moderato | `300 < delay <= 600` |
-| Ritardo Grave | `> 600` |
+| In Anticipo (`early`) | `< -60` |
+| Regolare (`on_time`) | `[-60, 180)` |
+| Moderato (`moderate_delay`) | `[180, 300)` |
+| Ritardo ≥ 5 min (`major_delay`) | `>= 300` |
 
-Le due definizioni hanno finalità analitiche distinte e non sono intercambiabili. La loro armonizzazione rimane un **miglioramento metodologico futuro**; i risultati ML non devono essere reinterpretati come risultati validati per la soglia >600 secondi.
+Le fasce di probabilità sono: Basso `p < 0.20`, Medio `0.20 <= p <= 0.45`, Alto `0.45 < p < 0.80`, Critico `p >= 0.80`. Il flag positivo usa **strettamente `p > 0.45`**: a `p = 0.45` la classificazione resta negativa.
+
+`current_status` è lo stato GTFS del veicolo, non una fascia di severità del ritardo. `is_currently_delayed_flag` indica `current_arrival_delay_seconds > 60`: è una feature distinta dal target ML. Persistence mantiene il delay corrente, con fallback **−71 secondi** per NULL/NaN. Colonne tecniche, formule e risultati restano invariati.
 
 ## Batch scoring e registrazione
 
-`rome_transport.ml.next_stop_delay_predictions` contiene l'ultima snapshot valutata: **17.177 righe**, **2.831** previsioni con flag positivo e quota di ritardo grave previsto **0.16481**, applicando il confronto stretto `probability > 0.45`.
+`rome_transport.ml.next_stop_delay_predictions` contiene l'ultima snapshot valutata: **17.177 righe**, **2.831** previsioni con flag positivo e quota di ritardo ≥ 5 min previsto **0.16481**, applicando il confronto stretto `probability > 0.45`.
 
-| Sintesi della probabilità di ritardo grave | Valore |
+| Sintesi della probabilità di ritardo ≥ 5 min | Valore |
 | --- | ---: |
 | Media | 0.17923 |
 | P90 | 0.86189 |
 | P95 | 0.91219 |
 | P99 | 0.95041 |
 
-È batch scoring sull'ultima snapshot disponibile, con impostazione assimilabile alla produzione; non è un'API o un servizio di produzione in tempo reale. Un singolo batch non dimostra una tendenza predittiva né nuove prestazioni su dati mai osservati.
+Il batch verificato è `historical_latest_snapshot_replay`: scoring della snapshot del 2 ottobre 2026 dal labeled dataset v8, eseguito il 3 ottobre con sovrapposizione ai dati di refit. Le label sono escluse dagli input del modello, ma la popolazione deriva dal dataset etichettato; non è scoring corrente indipendente dalle label né un'API live. Un singolo batch non dimostra una tendenza predittiva né nuove prestazioni su dati mai osservati.
 
 Tracciamento MLflow, selezione finale e scoring sono completati. **La registrazione del modello in produzione non è completata**: la serializzazione degli artefatti SparkML in Unity Catalog è rinviata per una limitazione dell'attuale ambiente Databricks Serverless (`DEFERRED_SERVERLESS_LIMITATION`). Questo limite non invalida le previsioni batch già prodotte.
 
 ## Livello analitico Gold
 
-Tutti i controlli finali di validazione Gold risultano superati. I controlli strutturali e sui dati non risolvono la differenza semantica tra le definizioni descritta sopra.
+Tutti i controlli finali di validazione Gold risultano superati. I campi `major_delay_count/rate` si riferiscono al proxy futuro ≥300 secondi, con aggregazioni ponderate per osservazione.
 
 | Tabella in `rome_transport.gold` | Finalità e granularità |
 | --- | --- |
@@ -189,11 +191,11 @@ Le classifiche richiedono almeno **1.000 osservazioni** per linea (**354 linee a
 
 ## Principali risultati analitici
 
-Gli aggregati storici coprono **9.975.703 osservazioni**: ritardo medio **24.7172 secondi**, mediana **−71 secondi**, P90 **644 secondi**, P95 **1.198 secondi** e P99 **3.102 secondi**. Il conteggio riportato dei ritardi gravi è **1.878.569**, con quota **0.18831**, soggetta alla precisazione sulle definizioni.
+Gli aggregati storici coprono **9.975.703 osservazioni**: ritardo medio **24.7172 secondi**, mediana **−71 secondi**, P90 **644 secondi**, P95 **1.198 secondi** e P99 **3.102 secondi**. Il conteggio riportato dei ritardi ≥ 5 min è **1.878.569**, con quota **0.18831**, per il proxy alla fermata successiva ≥300 secondi.
 
 Le quote per fascia oraria sono: Notte **0.06551**, Mattina **0.15457**, Fascia centrale **0.18944**, Punta serale **0.20327** e Sera **0.25224**. Alle ore 20 la quota raggiunge **0.30286**; nei giorni feriali e nel fine settimana è rispettivamente **0.18574** e **0.19748**.
 
-Quando la fermata corrente è già classificata in ritardo grave, la frequenza di ritardo grave alla successiva è **0.88714**, su circa **1.64 milioni di osservazioni**, con ritardo mediano alla fermata successiva di **740 secondi**. Nella transizione da fermata precedente Regolare a fermata corrente in Ritardo Grave, la frequenza è **0.51389**. Sono associazioni descrittive di propagazione secondo le fasce registrate, non effetti causali universali o probabilità validate separatamente per >600 secondi.
+Quando la fermata corrente è già classificata in ritardo ≥ 5 min, la frequenza di ritardo ≥ 5 min alla successiva è **0.88714**, su circa **1.64 milioni di osservazioni**, con ritardo mediano alla fermata successiva di **740 secondi**. Nella transizione da fermata precedente Regolare a fermata corrente in Ritardo ≥ 5 min, la frequenza è **0.51389**. Sono associazioni descrittive di propagazione secondo le fasce registrate, non effetti causali universali. Le fasce corrente/precedente usano gli stessi confini −60/180/300 secondi.
 
 ## Dashboard
 
@@ -233,7 +235,7 @@ La Panoramica Esecutiva è mostrata in apertura; qui seguono tre ulteriori pagin
   <em>Prestazioni del Modello</em>
 </p>
 
-L’interfaccia italiana è una scelta intenzionale, coerente con il contesto operativo della mobilità pubblica romana. Le fasce di rischio della presentazione finale sono Basso `p <= 0.30`, Medio `0.30 < p <= 0.50`, Alto `0.50 < p <= 0.70`, Critico `p > 0.70`. Sono distinte dal flag del classificatore, che usa strettamente 0.45, e richiedono riconciliazione con il campo di rischio Gold.
+L’interfaccia italiana è una scelta intenzionale, coerente con il contesto operativo della mobilità pubblica romana. Le fasce di rischio del JSON corrispondono al campo Gold `risk_band`: Basso p<0.20, Medio 0.20<=p<=0.45, Alto 0.45<p<0.80, Critico p>=0.80. Sono fasce di probabilità dell’evento ≥5 min, distinte dalla severità in secondi e dalla decisione binaria.
 
 La dashboard è pubblicata **all'interno di Databricks e richiede autenticazione**: non è accessibile anonimamente né costituisce una dashboard pubblica per recruiter. È un limite di distribuzione del portfolio. Il repository contiene l'[export JSON della dashboard](dashboard/databricks/dashboard/Affidabilita_Trasporto_Pubblico_Roma.lvdash.json) e il [PDF completo della dashboard](dashboard/databricks/pdf/Affidabilita_Trasporto_Pubblico_Roma.pdf), consultabile senza accedere a Databricks. Il PDF comprende le cinque pagine nell'ordine elencato sopra ed è un'esportazione statica, non una dashboard live. È pianificato un [livello di presentazione Power BI](dashboard/powerbi/README.md) separato.
 
@@ -285,11 +287,11 @@ Git non versiona le directory vuote. Le impostazioni locali del workspace dell'e
 
 Le osservazioni future GTFS-Realtime sono proxy operativi e possono ancora essere previsioni riviste. Posizioni mancanti o obsolete, variazioni degli orari e anomalie al cambio del giorno di servizio limitano l'interpretazione. Il filtro ±12 ore affronta artefatti diagnosticati: non è una soglia GTFS universale e non rende automaticamente invalidi i dati notturni.
 
-Otto date di servizio non dimostrano generalizzazione sul lungo periodo o sull'intera rete cittadina. I timestamp del feed non provano da soli l'effettiva disponibilità al momento dell'ingestion; l'ultimo batch non è una nuova valutazione su dati di test. La registrazione rimane rinviata, la dashboard richiede autenticazione e le definizioni di ritardo/rischio devono essere riconciliate prima di considerarle coerenti tra i livelli.
+Otto date di servizio non dimostrano generalizzazione sul lungo periodo o sull'intera rete cittadina. I timestamp del feed non provano da soli l'effettiva disponibilità al momento dell'ingestion; l'ultimo batch non è una nuova valutazione su dati di test. La registrazione rimane rinviata, la dashboard richiede autenticazione e il contratto semantico è allineato nel JSON corrente; PDF e screenshot aggiornati documentano la presentazione corrente.
 
 ## Sviluppi futuri
 
-Riconciliare le definizioni ML/Gold/dashboard; risolvere la registrazione in un ambiente supportato; estendere il monitoraggio temporale e la valutazione per segmento; preparare la presentazione pubblica Power BI separata. Un'analisi più ampia della spiegabilità, una scheda del modello e un dizionario dei dati autonomi restano estensioni, non deliverable già completati.
+Risolvere la registrazione in un ambiente supportato; estendere il monitoraggio temporale e la valutazione per segmento; preparare la presentazione pubblica Power BI separata. Un'analisi più ampia della spiegabilità, una scheda del modello e un dizionario dei dati autonomi restano estensioni, non deliverable già completati.
 
 ## Stato del progetto
 
@@ -297,4 +299,4 @@ Riconciliare le definizioni ML/Gold/dashboard; risolvere la registrazione in un 
 
 **Rinviata:** registrazione del modello in produzione per il limite dell'ambiente attuale.
 
-**Da completare:** riconciliazione metodologica delle definizioni e distribuzione pubblica del portfolio. Non si dichiara un'API live, un modello registrato in produzione o un'adozione operativa a livello cittadino.
+**Da completare:** distribuzione pubblica del portfolio. Non si dichiara un'API live, un modello registrato in produzione o un'adozione operativa a livello cittadino.

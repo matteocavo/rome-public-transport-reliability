@@ -4,6 +4,9 @@
 # MAGIC Prepare regression and classification inputs for Rome Public Transport Reliability & Delay Prediction after notebooks 01–07.
 # MAGIC This notebook writes only the feature table; encoding, temporal splits, training, MLflow and dashboards belong to later notebooks.
 
+# MAGIC
+# MAGIC Same-snapshot provisional targets are feed estimates, not future outcomes. The final ML event next_stop_delay_ge_300s is defined from the future GTFS-RT proxy in notebook 09. current_status is vehicle state; is_currently_delayed_flag (>60s) is a separate feature.
+
 # COMMAND ----------
 
 # MAGIC %md

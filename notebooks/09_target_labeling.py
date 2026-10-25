@@ -4,6 +4,9 @@
 # MAGIC Attach future next-stop labels to the existing leakage-safe features for Rome Public Transport Reliability & Delay Prediction.
 # MAGIC All feature values remain unchanged; future observations, provisional targets and label-quality evidence are strictly labels or audit data, never model inputs.
 
+# MAGIC
+# MAGIC Canonical event next_stop_delay_ge_300s: future GTFS-RT next-stop delay proxy >=300 seconds, displayed as Ritardo >= 5 min. Realized names denote proxy labels, not certified arrivals; provisional labels remain audit-only.
+
 # COMMAND ----------
 
 # MAGIC %md

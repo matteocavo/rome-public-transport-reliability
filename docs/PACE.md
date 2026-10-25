@@ -22,7 +22,7 @@ Il documento mantiene il framework PACE e le motivazioni progettuali, distinguen
 
 **Rinviata:** registrazione del modello in produzione, a causa del limite di serializzazione degli artefatti SparkML / Unity Catalog nell'ambiente Serverless corrente. Scoring e tracciamento degli esperimenti sono completati indipendentemente dalla registrazione.
 
-**Riconciliazione metodologica da completare:** il codice di etichettatura e Gold definisce il ritardo grave come >=300 secondi; il testo della dashboard usa >600 secondi. I risultati rimangono invariati e non sono reinterpretati come risultati validati per >600 secondi. Differiscono anche le fasce di ritardo e probabilità. La sezione 14 esplicita entrambe le definizioni; codice e JSON della dashboard non vengono modificati.
+**Contratto semantico corrente:** evento `next_stop_delay_ge_300s`, display “Ritardo ≥ 5 min”. La precedente descrizione >600 secondi e le fasce visuali 30/50/70 erano incoerenti con i valori Gold: il JSON corrente le corregge senza cambiare dati o modelli. La sezione 14 definisce il contratto. PDF e screenshot sono aggiornati dal nuovo export in tema chiaro.
 
 **Distribuzione:** la dashboard pubblicata richiede autenticazione Databricks. L'export JSON e il PDF completo sono presenti nel repository. Una presentazione Power BI pubblica separata rimane futura. Il vincolo di accesso riguarda la distribuzione della dashboard interattiva, non il funzionamento dell'implementazione Databricks.
 
@@ -107,7 +107,7 @@ Queste domande orientano l'analisi; le associazioni osservate non costituiscono 
 
 **Che cosa è probabile che accada alla fermata successiva?**
 
-> Prevedere il ritardo atteso e il rischio di ritardo grave di un veicolo alla prossima fermata.
+> Prevedere il ritardo atteso e il rischio di ritardo ≥ 5 min di un veicolo alla prossima fermata.
 
 ---
 
@@ -317,13 +317,13 @@ I criteri progettuali sono mantenuti come riferimento di valutazione; risultati 
 
 ### Analisi
 
-Calcolo di ritardo medio, mediano e P90, quote di regolarità e ritardo grave, affidabilità per linea/fermata/ora e propagazione del ritardo.
+Calcolo di ritardo medio, mediano e P90, quote di regolarità e ritardo ≥ 5 min, affidabilità per linea/fermata/ora e propagazione del ritardo.
 
 ### Machine Learning
 
 Un modello di regressione più complesso deve superare una baseline significativa per giustificarne la sostituzione. Persistence è rimasta la soluzione più forte in validazione: mantenerla è coerente con una selezione fondata sulle evidenze.
 
-Un esempio di baseline alternativa è il ritardo medio storico per linea × fermata × ora. Il classificatore deve essere confrontato con riferimenti significativi, come la classe maggioritaria o la frequenza storica di ritardo grave.
+Un esempio di baseline alternativa è il ritardo medio storico per linea × fermata × ora. Il classificatore deve essere confrontato con riferimenti significativi, come la classe maggioritaria o la frequenza storica di ritardo ≥ 5 min.
 
 Entrambi i task richiedono valutazione su osservazioni temporalmente successive e non utilizzate nella selezione, prevenzione del leakage e metriche specifiche del problema.
 
@@ -341,24 +341,22 @@ Le statistiche di ritardo sono espresse in secondi, salvo conversione esplicita 
 
 Media, mediana, P90, P95 e P99 del ritardo realizzato alla fermata successiva; quote di regolarità e delle fasce di ritardo; affidabilità per linea, fermata e tempo; rischio alla fermata successiva; metriche di valutazione congelate. I percentili approssimati usano Spark `percentile_approx` con accuratezza 10,000. Un indice composito di affidabilità rimane un'idea opzionale, non un KPI finale pubblicato.
 
-## Fasce operative finali della dashboard
+## Contratto semantico corrente
 
-| Stato | Ritardo in secondi |
+L'evento canonico `next_stop_delay_ge_300s` indica il **proxy GTFS-Realtime del ritardo alla fermata successiva >=300 secondi**. Il display è **Ritardo ≥ 5 min**, oppure **Ritardo alla fermata successiva ≥ 5 min**. `target_realized_major_delay_flag` vale 1 quando `target_realized_next_stop_delay_seconds >= 300`; `major_delay_probability` è la probabilità di questo evento. Il proxy è una futura osservazione del feed, non un arrivo certificato.
+
+| Fascia di ritardo | Intervallo in secondi |
 | --- | --- |
-| In Anticipo | delay < -60 |
-| Regolare | -60 <= delay <= 300 |
-| Ritardo Moderato | 300 < delay <= 600 |
-| Ritardo Grave | delay > 600 |
+| In Anticipo (`early`) | `< -60` |
+| Regolare (`on_time`) | `[-60, 180)` |
+| Moderato (`moderate_delay`) | `[180, 300)` |
+| Ritardo ≥ 5 min (`major_delay`) | `>= 300` |
 
-## Target ML implementato e differenza da riconciliare
+Le fasce di probabilità sono: Basso `p < 0.20`, Medio `0.20 <= p <= 0.45`, Alto `0.45 < p < 0.80`, Critico `p >= 0.80`. Il flag positivo usa **strettamente `p > 0.45`**: a `p = 0.45` la classificazione resta negativa.
 
-Il classificatore è stato addestrato e valutato sul target ML `target_realized_major_delay_flag`, calcolato dal notebook 09 come **ritardo realizzato alla fermata successiva >=300 secondi**. La dashboard adotta invece **Ritardo Grave >600 secondi** come fascia di severità operativa: una tassonomia di presentazione dello stato del servizio, distinta dalla definizione dell'evento appreso dal modello. Le due soglie hanno finalità analitiche diverse e non sono intercambiabili. Il notebook 13 valida questa definizione e usa le fasce: anticipo < -60, regolarità [-60,180), ritardo moderato [180,300), ritardo grave >=300. Il testo della dashboard descrive invece l'evento >600 secondi.
+`current_status` è lo stato GTFS del veicolo, non una fascia di severità del ritardo. `is_currently_delayed_flag` indica `current_arrival_delay_seconds > 60`: è una feature distinta dal target ML. Persistence mantiene il delay corrente, con fallback **−71 secondi** per NULL/NaN. Colonne tecniche, formule e risultati restano invariati.
 
-Le query SQL dell'export leggono campi Gold già calcolati: le etichette di presentazione non ne ricalcolano il significato. Le metriche del classificatore non diventano quindi metriche per >600 secondi per effetto di una modifica testuale.
-
-Anche le fasce di rischio differiscono: il notebook 13 usa p<0.20, 0.20<=p<=0.45, 0.45<p<0.80 e p>=0.80; la presentazione finale usa Basso p<=0.30, Medio 0.30<p<=0.50, Alto 0.50<p<=0.70 e Critico p>0.70. La decisione binaria del classificatore rimane **strettamente p>0.45**, distinta dalle fasce visuali.
-
-La riconciliazione di etichette, Gold e dashboard è un **miglioramento metodologico futuro**. Conteggi, quote e metriche sono preservati, ma non possono essere reinterpretati come risultati validati per >600 secondi sulla base degli artefatti disponibili. La probabilità si riferisce sempre all'evento alla fermata successiva definito dal target usato nel training. Questo limite semantico è distinto dai controlli strutturali Gold superati.
+La precedente legenda >600 secondi era un errore di presentazione, corretto nel JSON corrente. Non definiva un secondo KPI calcolato dalla dashboard. Le query leggono i valori Gold esistenti; risultati e metriche non sono stati ricalcolati. PDF e screenshot sono allineati tramite il nuovo export in tema chiaro.
 
 ---
 
@@ -372,7 +370,7 @@ La prima snapshot successiva valida della stessa corsa, data di servizio e ferma
 
 ## Task secondario: classificazione binaria
 
-Target implementato localmente: `target_realized_major_delay_flag`, derivato dall'etichetta realizzata di regressione con soglia >=300 secondi. I nomi generici proposti inizialmente sono stati superati. La soglia >600 secondi della dashboard è documentata separatamente nella sezione 14 e non viene sostituita retroattivamente nel classificatore valutato.
+Target implementato localmente: `target_realized_major_delay_flag`, derivato dall'etichetta realizzata di regressione con soglia >=300 secondi. I nomi generici proposti inizialmente sono stati superati. Il display corrente “Ritardo ≥ 5 min” descrive lo stesso evento, come definito nella sezione 14.
 
 La stessa definizione di etichetta vale per train / validation / test. La soglia di probabilità è stata selezionata su validation, congelata a >0.45 in senso stretto e non ritoccata sul TEST.
 
@@ -437,7 +435,7 @@ Un'altra alternativa progettuale era la mediana per la stessa linea e fermata.
 ## Baseline di classificazione
 
 - Classe maggioritaria.
-- Frequenza storica di ritardo grave per linea/fermata/ora.
+- Frequenza storica di ritardo ≥ 5 min per linea/fermata/ora.
 - Soglia semplice su `current_delay`, quando metodologicamente appropriata e disponibile alla previsione.
 
 Statistiche storiche e classe maggioritaria devono essere stimate solo su osservazioni passate ammissibili del train. Le baseline condividono la definizione del target dei classificatori. Il confronto con la classe maggioritaria è implementato; le altre regole sono alternative progettuali, non ulteriori risultati finali dichiarati.
@@ -482,13 +480,13 @@ Le aggregazioni Gold implementate usano `service_date`, `day_of_week` secondo la
 
 Giorno della settimana e indicatore del fine settimana derivano dalla data civile del feed; `service_date` resta distinto, per preservare la gestione del giorno di servizio. Otto date di servizio non supportano conclusioni stagionali o mensili.
 
-Quote di ritardo grave riportate: Notte **0.06551**, Mattina **0.15457**, Fascia centrale **0.18944**, Punta serale **0.20327**, Sera **0.25224**. Alle ore 20: **0.30286**. Giorni feriali: **0.18574**; fine settimana: **0.19748**. Rimane valida la precisazione sulle definizioni della sezione 14.
+Quote di ritardo ≥ 5 min riportate: Notte **0.06551**, Mattina **0.15457**, Fascia centrale **0.18944**, Punta serale **0.20327**, Sera **0.25224**. Alle ore 20: **0.30286**. Giorni feriali: **0.18574**; fine settimana: **0.19748**. Rimane valida la precisazione sulle definizioni della sezione 14.
 
 ---
 
 # 22. ANALISI PER LINEA
 
-Le misure considerate per linea comprendono numero di corse e osservazioni, ritardo medio, mediano e P90, variabilità, quota di regolarità e quota di ritardo grave.
+Le misure considerate per linea comprendono numero di corse e osservazioni, ritardo medio, mediano e P90, variabilità, quota di regolarità e quota di ritardo ≥ 5 min.
 
 Le classifiche richiedono almeno **1,000 osservazioni**: nel dataset finale risultano ammissibili **354 linee**. I gruppi più piccoli mantengono le metriche ma sono esclusi dal ranking, così da non confrontare campioni minimi e grandi con lo stesso criterio.
 
@@ -527,9 +525,9 @@ cumulative_delay
 
 Il contratto delle feature implementa `lag_1_arrival_delay_seconds`, `lag_2_arrival_delay_seconds`, `lag_3_arrival_delay_seconds` e `delay_change_from_previous_stop`. Le sintesi di propagazione sono descrittive, non causali.
 
-Quando la fermata corrente è in Ritardo Grave, la frequenza di ritardo grave alla successiva è **0.88714**, su circa **1.64 milioni di osservazioni**, con mediana del ritardo successivo di **740 secondi**. La transizione da fermata precedente Regolare a corrente in Ritardo Grave presenta frequenza **0.51389**.
+Quando la fermata corrente è in Ritardo ≥ 5 min, la frequenza di ritardo ≥ 5 min alla successiva è **0.88714**, su circa **1.64 milioni di osservazioni**, con mediana del ritardo successivo di **740 secondi**. La transizione da fermata precedente Regolare a corrente in Ritardo ≥ 5 min presenta frequenza **0.51389**.
 
-Le fasce registrate devono essere riconciliate con la presentazione della dashboard prima di interpretare questi risultati come transizioni riferite alla soglia >600 secondi.
+Le transizioni usano le fasce −60/180/300 secondi della sezione 14; “Ritardo ≥ 5 min” indica la fascia >=300, non un evento >600 secondi.
 
 ---
 
@@ -808,9 +806,9 @@ Le tabelle storiche usano etichette realizzate; `predictive_operations` usa solo
 
 Le scritture Delta usano overwrite con sostituzione dello schema. Le versioni sorgente vengono fissate per ciascun aggiornamento; i metadati sono pubblicati dopo la validazione. Le singole sovrascritture non costituiscono una transazione atomica su più tabelle.
 
-Tutti i controlli finali Gold risultano superati: conteggi, unicità della granularità, chiavi obbligatorie, metriche finite, quote/probabilità valide, valori di valutazione congelati ed esclusioni contro il leakage operativo. Questi controlli strutturali non risolvono la differenza semantica della sezione 14.
+Tutti i controlli finali Gold risultano superati: conteggi, unicità della granularità, chiavi obbligatorie, metriche finite, quote/probabilità valide, valori di valutazione congelati ed esclusioni contro il leakage operativo. La presentazione corrente adotta il contratto semantico della sezione 14.
 
-Metriche di rete riportate: **9,975,703 osservazioni**; media **24.7172 secondi**; mediana **-71**; P90 **644**; P95 **1,198**; P99 **3,102**. Il conteggio di ritardo grave è **1,878,569**, quota **0.18831**, secondo la definizione della sorgente registrata, non validata separatamente per >600 secondi. Le soglie di ranking sono 1,000 osservazioni per linea e 500 per fermata: 354 linee e 5,172 fermate risultano ammissibili.
+Metriche di rete riportate: **9,975,703 osservazioni**; media **24.7172 secondi**; mediana **-71**; P90 **644**; P95 **1,198**; P99 **3,102**. Il conteggio di ritardo ≥ 5 min è **1,878,569**, quota **0.18831**, secondo l’evento proxy alla fermata successiva >=300 secondi. Le soglie di ranking sono 1,000 osservazioni per linea e 500 per fermata: 354 linee e 5,172 fermate risultano ammissibili.
 
 ---
 
@@ -989,7 +987,7 @@ Ultimo batch verificato: **17,177 righe**, **2,831 previsioni con flag positivo*
 
 La regressione utilizza `current_arrival_delay_seconds`, con valore sostitutivo **-71 secondi** in caso di dato mancante. Il rinvio della registrazione non invalida lo scoring batch in memoria già eseguito; limita invece le dichiarazioni di distribuzione e ricaricamento basati su artefatti persistiti.
 
-Non si tratta di un'API live o di un servizio di produzione in tempo reale. L'ultima snapshot disponibile può essere una riproduzione dello storico; un singolo batch non fornisce tendenze predittive né una nuova misura su dati di test. Fasce di rischio e definizione del target richiedono la riconciliazione della sezione 14.
+Non si tratta di un'API live o di un servizio di produzione in tempo reale. Il batch verificato è `historical_latest_snapshot_replay` della snapshot del 2 ottobre, eseguito il 3 ottobre dal labeled dataset v8 con overlap al refit; un singolo batch non fornisce tendenze predittive né una nuova misura su dati di test. Fasce di rischio e target seguono il contratto della sezione 14.
 
 ---
 
@@ -1021,7 +1019,7 @@ L'inventario progettuale seguente conserva le motivazioni originarie, senza impl
 
 **Finalità:** offrire una lettura immediata dell'affidabilità della rete.
 
-KPI inizialmente considerati: ritardo medio e mediano, percentuale di regolarità, percentuale di ritardi gravi, linee attive, corse osservate, MAE di regressione e F1/rischio di classificazione dove pertinenti.
+KPI inizialmente considerati: ritardo medio e mediano, percentuale di regolarità, percentuale di ritardi ≥ 5 min, linee attive, corse osservate, MAE di regressione e F1/rischio di classificazione dove pertinenti.
 
 Visualizzazioni ipotizzate: andamento temporale dei ritardi, classifica di affidabilità delle linee, affidabilità oraria e confronto per giorno della settimana.
 
@@ -1051,11 +1049,9 @@ L'inventario è una motivazione progettuale, non una dichiarazione di implementa
 
 **Pagina implementata:** Monitoraggio Predittivo. Presenta previsioni batch del ritardo, probabilità alla fermata successiva e informazioni utili a stabilire priorità operative.
 
-**Finalità:** tradurre gli output ML in informazioni leggibili dagli interlocutori operativi. L'inventario originario considerava linea, veicolo, fermata corrente, ritardo corrente, ritardo successivo previsto, probabilità e flag di ritardo grave, media storica e livello di rischio. Le categorie iniziali erano Normale, Elevato, Alto e Critico.
+**Finalità:** tradurre gli output ML in informazioni leggibili dagli interlocutori operativi. L'inventario originario considerava linea, veicolo, fermata corrente, ritardo corrente, ritardo successivo previsto, probabilità e flag di ritardo ≥ 5 min, media storica e livello di rischio. Le categorie iniziali erano Normale, Elevato, Alto e Critico.
 
-L'inventario resta un riferimento progettuale; non afferma che ogni colonna o visualizzazione sia presente. La presentazione finale dichiarata usa **Basso p<=0.30, Medio 0.30<p<=0.50, Alto 0.50<p<=0.70, Critico p>0.70**.
-
-Le fasce visuali sono distinte dal flag congelato **p>0.45** e differiscono dalle fasce attualmente implementate in Gold. La riconciliazione resta da completare; non si attribuisce alle soglie di presentazione un'ottimalità statistica. L'export è il riferimento del layout effettivo.
+L'inventario resta un riferimento progettuale; non afferma che ogni colonna o visualizzazione sia presente. Il JSON corrente visualizza le fasce Gold: **Basso p<0.20, Medio 0.20<=p<=0.45, Alto 0.45<p<0.80, Critico p>=0.80**. Sono probabilità dell’evento proxy ≥5 min, distinte dalle fasce di ritardo e dal flag p>0.45. Non si attribuisce alle fasce un’ottimalità statistica.
 
 ---
 
@@ -1157,7 +1153,7 @@ Il piano prevedeva registrazione e documentazione di feature, periodo di trainin
 
 **Esito:** completata nel notebook 12 sull'ultima snapshot disponibile.
 
-Produce ritardo previsto, probabilità di ritardo grave e relativo flag, con impostazione assimilabile alla produzione.
+Produce un replay storico dell’ultima snapshot del labeled dataset, con probabilità dell’evento ≥5 min e flag p>0.45. Non è scoring corrente indipendente dalle label.
 
 ## Fase 13 — Analisi Gold
 
@@ -1229,7 +1225,7 @@ I controlli implementati coprono unicità della granularità, chiavi obbligatori
 
 Gold verifica output non vuoti, metriche finite, quote/probabilità in [0,1], corrispondenza esatta con le metriche congelate, numerosità minima per il ranking e riconciliazione prima e dopo la scrittura.
 
-Rimangono rilevanti le diagnostiche specifiche dei livelli: linee/fermate mancanti, sequenze non valide, snapshot ripetute e osservazioni obsolete. Il superamento dei controlli strutturali non dimostra che la semantica >600 secondi della dashboard corrisponda al target computazionale >=300 secondi.
+Rimangono rilevanti le diagnostiche specifiche dei livelli: linee/fermate mancanti, sequenze non valide, snapshot ripetute e osservazioni obsolete. Il contratto corrente descrive correttamente il target >=300 secondi; i controlli strutturali restano distinti dalla validazione degli outcome proxy.
 
 ## Decisione sulla qualità delle etichette realizzate
 
@@ -1292,7 +1288,7 @@ Questo rischio si è tradotto in un risultato utile: Persistence è rimasta la s
 
 ## Limiti residui dell'ambiente e dell'interpretazione
 
-La registrazione è rinviata per la serializzazione Serverless. La dashboard interattiva richiede autenticazione; il PDF e l'export JSON ne consentono la presentazione nel portfolio senza attribuirle accesso pubblico live. Otto date di servizio limitano la generalizzazione; gli esiti futuri GTFS-Realtime sono proxy operativi e la causalità dei timestamp non prova l'esatta disponibilità in ingestion. Le definizioni di ritardo e rischio ML/dashboard richiedono riconciliazione, come documentato nella sezione 14.
+La registrazione è rinviata per la serializzazione Serverless. La dashboard interattiva richiede autenticazione; il PDF e l'export JSON ne consentono la presentazione nel portfolio senza attribuirle accesso pubblico live. Otto date di servizio limitano la generalizzazione; gli esiti futuri GTFS-Realtime sono proxy operativi e la causalità dei timestamp non prova l'esatta disponibilità in ingestion. Le definizioni di ritardo e rischio del JSON corrente sono allineate nella sezione 14; gli esiti restano proxy futuri GTFS-RT.
 
 ---
 
@@ -1309,7 +1305,7 @@ Il requisito iniziale secondo cui un modello complesso doveva superare Persisten
 7. Congelare le decisioni di probabilità prima del TEST: la regola finale è strettamente p>0.45.
 8. Preservare i risultati TEST finali durante il riaddestramento per batch scoring.
 9. Documentare il rinvio della registrazione separatamente dalla validità dello scoring.
-10. Mantenere tra le attività residue la stabilità estesa per segmento, la spiegabilità completa e la riconciliazione semantica quando le evidenze non sono complete.
+10. Mantenere tra le attività residue la stabilità estesa per segmento e la spiegabilità completa; preservare il contratto semantico della sezione 14.
 
 Questi criteri non implicano che tutte le estensioni desiderate o tutti i requisiti di distribuzione in produzione siano già soddisfatti.
 
@@ -1325,11 +1321,11 @@ Le cinque pagine implementate affrontano le domande di business originarie trami
 4. Quando i ritardi sono più frequenti?
 5. Come si propaga il ritardo lungo una corsa?
 6. Quali ritardi prevede il modello nella snapshot corrente?
-7. Qual è la probabilità prevista di ritardo grave?
+7. Qual è la probabilità prevista di ritardo ≥ 5 min?
 8. Quali sono le prestazioni dei modelli di regressione e classificazione?
 9. In quali contesti i modelli funzionano peggio?
 
-L'analisi dettagliata degli errori per segmento rimane un'estensione, non un approfondimento già dichiarato come consegnato. La riconciliazione semantica della sezione 14 resta necessaria.
+L'analisi dettagliata degli errori per segmento rimane un'estensione, non un approfondimento già dichiarato come consegnato. Il JSON corrente segue il contratto semantico della sezione 14.
 
 ---
 
@@ -1346,7 +1342,7 @@ L'analisi dettagliata degli errori per segmento rimane un'estensione, non un app
 ## Componenti rinviate o future
 
 - Registrazione riuscita degli artefatti in Unity Catalog e verifica di distribuzione/ricaricamento.
-- Riconciliazione delle definizioni di ritardo/rischio tra presentazione della dashboard e ML/Gold.
+- Mantenimento degli export PDF/screenshot allineati alle successive revisioni della dashboard.
 - Presentazione Power BI pubblica separata, descritta in `dashboard/powerbi/README.md`.
 - Dizionario dei dati e scheda del modello autonomi, spiegabilità più ampia e monitoraggio su un orizzonte maggiore dove non ancora documentati.
 
@@ -1426,7 +1422,7 @@ Il modello di Machine Learning è una componente del progetto, non il progetto n
 
 **Tracciamento ML:** MLflow
 
-**Problema ML:** regressione del ritardo a breve orizzonte come task principale; classificazione binaria del ritardo grave come task secondario
+**Problema ML:** regressione del ritardo a breve orizzonte come task principale; classificazione binaria del ritardo ≥ 5 min come task secondario
 
 **Validazione:** cronologica
 
@@ -1442,7 +1438,7 @@ Il modello di Machine Learning è una componente del progetto, non il progetto n
 
 ## Stato finale ed estensioni
 
-L'implementazione Databricks è sostanzialmente completa fino a scoring, analisi Gold e dashboard AI/BI autenticata. La registrazione in produzione resta rinviata. La riconciliazione esplicita delle definizioni di ritardo/rischio è il prossimo miglioramento metodologico di allineamento tra codice e documentazione: questa revisione modifica soltanto testi. Il PDF completo è già disponibile nel repository; la presentazione pubblica Power BI rimane un'estensione separata del portfolio.
+L'implementazione Databricks è sostanzialmente completa fino a scoring, analisi Gold e dashboard AI/BI autenticata. La registrazione in produzione resta rinviata. Il JSON corrente e la documentazione correggono il precedente disallineamento di ritardo/rischio: questa revisione preserva logica, dati, modelli e metriche. Il PDF completo è già disponibile nel repository; la presentazione pubblica Power BI rimane un'estensione separata del portfolio.
 
 ---
 

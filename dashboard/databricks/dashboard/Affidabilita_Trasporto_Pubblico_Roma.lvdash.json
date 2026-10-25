@@ -13,7 +13,7 @@
       "queryLines": [
         "SELECT\n",
         "  'Predicted Major Delay Rate' AS metric,\n",
-        "  'Tasso Previsto di Ritardi Gravi' AS indicatore,\n",
+        "  'Tasso Previsto di Ritardi ≥ 5 min' AS indicatore,\n",
         "  latest_predicted_major_delay_rate AS `Score`\n",
         "FROM\n",
         "  rome_transport.gold.executive_overview\n",
@@ -103,7 +103,7 @@
         "UNION ALL\n",
         "SELECT\n",
         "  'Major Delay' AS `Delay Status`,\n",
-        "  'Ritardo Grave' AS `Stato del Ritardo`,\n",
+        "  'Ritardo ≥ 5 min' AS `Stato del Ritardo`,\n",
         "  major_delay_rate AS `Share of Observations`\n",
         "FROM\n",
         "  rome_transport.gold.executive_overview"
@@ -328,7 +328,7 @@
       "displayName": "Network Reliability Summary",
       "queryLines": [
         "SELECT\n",
-        "  'Linea con Tasso di Ritardi Gravi Più Alto' AS metric,\n",
+        "  'Linea con Tasso di Ritardi ≥ 5 min Più Alto' AS metric,\n",
         "  route_id AS identifier,\n",
         "  CONCAT(CAST(ROUND(major_delay_rate * 100, 1) AS STRING), '%') AS value\n",
         "FROM\n",
@@ -348,7 +348,7 @@
         "  AND observation_count >= 1000\n",
         "UNION ALL\n",
         "SELECT\n",
-        "  'Fermata con Tasso di Ritardi Gravi Più Alto',\n",
+        "  'Fermata con Tasso di Ritardi ≥ 5 min Più Alto',\n",
         "  stop_id,\n",
         "  CONCAT(CAST(ROUND(major_delay_rate * 100, 1) AS STRING), '%')\n",
         "FROM\n",
@@ -379,7 +379,7 @@
         "SELECT\n",
         "  'Ora Peggiore',\n",
         "  CONCAT(CAST(h.feed_hour AS STRING), ':00'),\n",
-        "  CONCAT(CAST(ROUND(h.rate * 100, 1) AS STRING), '% tasso di ritardi gravi')\n",
+        "  CONCAT(CAST(ROUND(h.rate * 100, 1) AS STRING), '% tasso di ritardi ≥ 5 min')\n",
         "FROM\n",
         "  (\n",
         "    SELECT\n",
@@ -395,7 +395,7 @@
         "  ) h\n",
         "UNION ALL\n",
         "SELECT\n",
-        "  'Tasso di Ritardi Gravi nel Fine Settimana',\n",
+        "  'Tasso di Ritardi ≥ 5 min nel Fine Settimana',\n",
         "  '—',\n",
         "  CONCAT(CAST(ROUND(w.rate * 100, 1) AS STRING), '%')\n",
         "FROM\n",
@@ -426,7 +426,7 @@
         "    WHEN 'early' THEN 'In Anticipo'\n",
         "    WHEN 'on_time' THEN 'Regolare'\n",
         "    WHEN 'moderate_delay' THEN 'Ritardo Moderato'\n",
-        "    WHEN 'major_delay' THEN 'Ritardo Grave'\n",
+        "    WHEN 'major_delay' THEN 'Ritardo ≥ 5 min'\n",
         "    WHEN 'unknown' THEN 'Sconosciuto'\n",
         "    ELSE current_delay_band\n",
         "  END AS `Stato Attuale`,\n",
@@ -442,7 +442,7 @@
         "    WHEN 'early' THEN 'In Anticipo'\n",
         "    WHEN 'on_time' THEN 'Regolare'\n",
         "    WHEN 'moderate_delay' THEN 'Ritardo Moderato'\n",
-        "    WHEN 'major_delay' THEN 'Ritardo Grave'\n",
+        "    WHEN 'major_delay' THEN 'Ritardo ≥ 5 min'\n",
         "    WHEN 'unknown' THEN 'Sconosciuto'\n",
         "    ELSE previous_delay_band\n",
         "  END AS `Stato Precedente`,\n",
@@ -460,7 +460,7 @@
         "      WHEN 'early' THEN 'In Anticipo'\n",
         "      WHEN 'on_time' THEN 'Regolare'\n",
         "      WHEN 'moderate_delay' THEN 'Ritardo Moderato'\n",
-        "      WHEN 'major_delay' THEN 'Ritardo Grave'\n",
+        "      WHEN 'major_delay' THEN 'Ritardo ≥ 5 min'\n",
         "      WHEN 'unknown' THEN 'Sconosciuto'\n",
         "      ELSE previous_delay_band\n",
         "    END,\n",
@@ -469,7 +469,7 @@
         "      WHEN 'early' THEN 'In Anticipo'\n",
         "      WHEN 'on_time' THEN 'Regolare'\n",
         "      WHEN 'moderate_delay' THEN 'Ritardo Moderato'\n",
-        "      WHEN 'major_delay' THEN 'Ritardo Grave'\n",
+        "      WHEN 'major_delay' THEN 'Ritardo ≥ 5 min'\n",
         "      WHEN 'unknown' THEN 'Sconosciuto'\n",
         "      ELSE current_delay_band\n",
         "    END\n",
@@ -1280,7 +1280,7 @@
             "spec": {
               "frame": {
                 "showTitle": true,
-                "title": "Tasso di Ritardi Gravi"
+                "title": "Tasso di Ritardi ≥ 5 min"
               },
               "version": 2,
               "widgetType": "counter",
@@ -1580,7 +1580,7 @@
                       },
                       {
                         "color": "#990A2C",
-                        "value": "Ritardo Grave"
+                        "value": "Ritardo ≥ 5 min"
                       }
                     ],
                     "type": "categorical"
@@ -1741,7 +1741,7 @@
             "x": 0,
             "y": 11,
             "width": 12,
-            "height": 1
+            "height": 2
           }
         },
         {
@@ -1789,7 +1789,7 @@
           },
           "position": {
             "x": 0,
-            "y": 12,
+            "y": 13,
             "width": 3,
             "height": 2
           }
@@ -1815,7 +1815,7 @@
             "spec": {
               "frame": {
                 "showTitle": true,
-                "title": "Tasso Previsto di Ritardi Gravi"
+                "title": "Tasso Previsto di Ritardi ≥ 5 min"
               },
               "version": 2,
               "widgetType": "counter",
@@ -1838,7 +1838,7 @@
           },
           "position": {
             "x": 3,
-            "y": 12,
+            "y": 13,
             "width": 3,
             "height": 2
           }
@@ -1864,7 +1864,7 @@
             "spec": {
               "frame": {
                 "showTitle": true,
-                "title": "Ritardi Gravi Previsti"
+                "title": "Ritardi ≥ 5 min Previsti"
               },
               "version": 2,
               "widgetType": "counter",
@@ -1888,7 +1888,7 @@
           },
           "position": {
             "x": 6,
-            "y": 12,
+            "y": 13,
             "width": 3,
             "height": 2
           }
@@ -1914,7 +1914,7 @@
             "spec": {
               "frame": {
                 "showTitle": true,
-                "title": "95° Percentile della Probabilità di Ritardo Grave"
+                "title": "95° Percentile della Probabilità di Ritardo ≥ 5 min"
               },
               "version": 2,
               "widgetType": "counter",
@@ -1937,7 +1937,7 @@
           },
           "position": {
             "x": 9,
-            "y": 12,
+            "y": 13,
             "width": 3,
             "height": 2
           }
@@ -1998,7 +1998,7 @@
                     "mappings": [
                       {
                         "value": "Predicted Major Delay Rate",
-                        "alias": "Tasso Previsto di Ritardi Gravi"
+                        "alias": "Tasso Previsto di Ritardi ≥ 5 min"
                       },
                       {
                         "value": "Probability Mean",
@@ -2028,7 +2028,7 @@
                     "sort": {
                       "by": "custom-order",
                       "orderedValues": [
-                        "Tasso Previsto di Ritardi Gravi",
+                        "Tasso Previsto di Ritardi ≥ 5 min",
                         "Probabilità Media",
                         "Probabilità P90",
                         "Probabilità P95",
@@ -2044,7 +2044,7 @@
                     "type": "categorical",
                     "mappings": [
                       {
-                        "value": "Tasso Previsto di Ritardi Gravi",
+                        "value": "Tasso Previsto di Ritardi ≥ 5 min",
                         "color": "#990A2C"
                       },
                       {
@@ -2077,7 +2077,7 @@
           },
           "position": {
             "x": 0,
-            "y": 14,
+            "y": 15,
             "width": 6,
             "height": 5
           }
@@ -2141,7 +2141,7 @@
           },
           "position": {
             "x": 6,
-            "y": 14,
+            "y": 15,
             "width": 6,
             "height": 5
           }
@@ -2205,7 +2205,7 @@
           },
           "position": {
             "x": 0,
-            "y": 19,
+            "y": 20,
             "width": 12,
             "height": 4
           }
@@ -2220,16 +2220,16 @@
                 "**Periodo Analizzato:** 8 giorni (25 settembre – 2 ottobre 2026)  \n",
                 "**Classifiche Linee:** Solo linee con ≥ 1.000 osservazioni  \n",
                 "**Classifiche Fermate:** Solo fermate con ≥ 500 osservazioni  \n",
-                "**Soglie Stato del Ritardo:** In Anticipo (< −60 s) | Regolare (−60 s a 300 s) | Ritardo Moderato (300 s a 600 s) | Ritardo Grave (> 600 s)  \n",
-                "**Rischio Previsto:** Probabilità di ritardo grave (> 600 s) alla fermata successiva."
+                "**Fasce di Ritardo:** In Anticipo (< −60 s) | Regolare [−60, 180) s | Moderato [180, 300) s | Ritardo ≥ 5 min (≥ 300 s).  \n",
+                "**Evento ML:** next_stop_delay_ge_300s — proxy GTFS-RT del ritardo alla fermata successiva ≥ 5 min. Probabilità riferita a questo evento; flag positivo solo con p > 0.45 (p = 0.45 negativo)."
               ]
             }
           },
           "position": {
             "x": 0,
-            "y": 23,
+            "y": 24,
             "width": 12,
-            "height": 2
+            "height": 4
           }
         }
       ],
@@ -2261,7 +2261,7 @@
             "name": "subtitle_text",
             "multilineTextboxSpec": {
               "lines": [
-                "Tasso di ritardi gravi e distribuzione dei ritardi per linea, fermata e fascia oraria."
+                "Tasso di ritardi ≥ 5 min e distribuzione dei ritardi per linea, fermata e fascia oraria."
               ]
             }
           },
@@ -2369,7 +2369,7 @@
                       "type": "max"
                     }
                   },
-                  "displayName": "Tasso di Ritardi Gravi"
+                  "displayName": "Tasso di Ritardi ≥ 5 min"
                 }
               },
               "data": {
@@ -2541,7 +2541,7 @@
               "frame": {
                 "showTitle": true,
                 "title": {
-                  "value": "Top 10 Linee per Tasso di Ritardi Gravi",
+                  "value": "Top 10 Linee per Tasso di Ritardi ≥ 5 min",
                   "fields": []
                 }
               },
@@ -2557,7 +2557,7 @@
                       "type": "max"
                     }
                   },
-                  "displayName": "Tasso di Ritardi Gravi",
+                  "displayName": "Tasso di Ritardi ≥ 5 min",
                   "scale": {
                     "type": "quantitative"
                   }
@@ -2577,7 +2577,7 @@
                 },
                 "color": {
                   "fieldName": "max(Major Delay Rate)",
-                  "displayName": "Tasso di Ritardi Gravi",
+                  "displayName": "Tasso di Ritardi ≥ 5 min",
                   "scale": {
                     "colorRamp": {
                       "colors": {
@@ -2739,7 +2739,7 @@
               "frame": {
                 "showTitle": true,
                 "title": {
-                  "value": "Top 10 Fermate per Tasso di Ritardi Gravi",
+                  "value": "Top 10 Fermate per Tasso di Ritardi ≥ 5 min",
                   "fields": []
                 }
               },
@@ -2755,7 +2755,7 @@
                       "type": "max"
                     }
                   },
-                  "displayName": "Tasso di Ritardi Gravi",
+                  "displayName": "Tasso di Ritardi ≥ 5 min",
                   "scale": {
                     "type": "quantitative"
                   }
@@ -2775,7 +2775,7 @@
                 },
                 "color": {
                   "fieldName": "max(Major Delay Rate)",
-                  "displayName": "Tasso di Ritardi Gravi",
+                  "displayName": "Tasso di Ritardi ≥ 5 min",
                   "scale": {
                     "colorRamp": {
                       "colors": {
@@ -2931,7 +2931,7 @@
               "frame": {
                 "showTitle": true,
                 "title": {
-                  "value": "Tasso di Ritardi Gravi per Fascia Oraria",
+                  "value": "Tasso di Ritardi ≥ 5 min per Fascia Oraria",
                   "fields": []
                 }
               },
@@ -2948,9 +2948,9 @@
                     }
                   },
                   "axis": {
-                    "title": "Tasso di Ritardi Gravi"
+                    "title": "Tasso di Ritardi ≥ 5 min"
                   },
-                  "displayName": "Tasso di Ritardi Gravi",
+                  "displayName": "Tasso di Ritardi ≥ 5 min",
                   "scale": {
                     "type": "quantitative"
                   }
@@ -2977,7 +2977,7 @@
                 },
                 "color": {
                   "fieldName": "Major Delay Rate",
-                  "displayName": "Tasso di Ritardi Gravi",
+                  "displayName": "Tasso di Ritardi ≥ 5 min",
                   "scale": {
                     "type": "quantitative",
                     "colorRamp": {
@@ -3031,7 +3031,7 @@
               "frame": {
                 "showTitle": true,
                 "title": {
-                  "value": "Tasso di Ritardi Gravi per Ora",
+                  "value": "Tasso di Ritardi ≥ 5 min per Ora",
                   "fields": []
                 }
               },
@@ -3058,9 +3058,9 @@
                     }
                   },
                   "axis": {
-                    "title": "Tasso di Ritardi Gravi"
+                    "title": "Tasso di Ritardi ≥ 5 min"
                   },
-                  "displayName": "Tasso di Ritardi Gravi",
+                  "displayName": "Tasso di Ritardi ≥ 5 min",
                   "scale": {
                     "type": "quantitative"
                   }
@@ -3146,7 +3146,7 @@
                   "axis": {
                     "title": ""
                   },
-                  "displayName": "Tasso di Ritardi Gravi",
+                  "displayName": "Tasso di Ritardi ≥ 5 min",
                   "scale": {
                     "type": "quantitative"
                   }
@@ -3156,7 +3156,7 @@
                   "legend": {
                     "hide": true
                   },
-                  "displayName": "Tasso di Ritardi Gravi",
+                  "displayName": "Tasso di Ritardi ≥ 5 min",
                   "scale": {
                     "colorRamp": {
                       "colors": {
@@ -3315,7 +3315,7 @@
               "frame": {
                 "showTitle": true,
                 "title": {
-                  "value": "Persistenza Ritardi Gravi",
+                  "value": "Persistenza Ritardi ≥ 5 min",
                   "fields": []
                 }
               },
@@ -3331,7 +3331,7 @@
                       "places": 1
                     }
                   },
-                  "displayName": "Rischio di Ritardo Grave alla Fermata Successiva"
+                  "displayName": "Rischio di Ritardo ≥ 5 min alla Fermata Successiva"
                 }
               },
               "data": {
@@ -3373,7 +3373,7 @@
               "frame": {
                 "showTitle": true,
                 "title": {
-                  "value": "Casi di Ritardi Gravi Persistenti",
+                  "value": "Casi di Ritardi ≥ 5 min Persistenti",
                   "fields": []
                 }
               },
@@ -3497,7 +3497,7 @@
                   "fields": []
                 },
                 "description": {
-                  "value": "Rischio di ritardo grave alla fermata successiva dopo una transizione da Regolare a Ritardo Grave.",
+                  "value": "Rischio di ritardo ≥ 5 min alla fermata successiva dopo una transizione da Regolare a Ritardo ≥ 5 min.",
                   "fields": []
                 }
               },
@@ -3513,7 +3513,7 @@
                       "places": 1
                     }
                   },
-                  "displayName": "Rischio di Ritardo Grave alla Fermata Successiva"
+                  "displayName": "Rischio di Ritardo ≥ 5 min alla Fermata Successiva"
                 }
               },
               "data": {
@@ -3552,7 +3552,7 @@
                   ],
                   "filters": [
                     {
-                      "expression": "`Stato Attuale` IN ('In Anticipo', 'Regolare', 'Ritardo Moderato', 'Ritardo Grave') AND `Stato Precedente` IN ('In Anticipo', 'Regolare', 'Ritardo Moderato', 'Ritardo Grave')"
+                      "expression": "`Stato Attuale` IN ('In Anticipo', 'Regolare', 'Ritardo Moderato', 'Ritardo ≥ 5 min') AND `Stato Precedente` IN ('In Anticipo', 'Regolare', 'Ritardo Moderato', 'Ritardo ≥ 5 min')"
                     }
                   ],
                   "disaggregated": false
@@ -3569,7 +3569,7 @@
                 },
                 "description": {
                   "fields": [],
-                  "value": "Rischio di ritardo grave alla fermata successiva per stato precedente e attuale"
+                  "value": "Rischio di ritardo ≥ 5 min alla fermata successiva per stato precedente e attuale"
                 }
               },
               "version": 3,
@@ -3597,11 +3597,11 @@
                       },
                       {
                         "value": "Major Delay",
-                        "alias": "Ritardo Grave"
+                        "alias": "Ritardo ≥ 5 min"
                       },
                       {
                         "value": "Major",
-                        "alias": "Grave"
+                        "alias": "≥ 5 min"
                       },
                       {
                         "value": "Moderate",
@@ -3618,7 +3618,7 @@
                         "In Anticipo",
                         "Regolare",
                         "Ritardo Moderato",
-                        "Ritardo Grave"
+                        "Ritardo ≥ 5 min"
                       ]
                     },
                     "type": "categorical"
@@ -3646,11 +3646,11 @@
                       },
                       {
                         "value": "Major Delay",
-                        "alias": "Ritardo Grave"
+                        "alias": "Ritardo ≥ 5 min"
                       },
                       {
                         "value": "Major",
-                        "alias": "Grave"
+                        "alias": "≥ 5 min"
                       },
                       {
                         "value": "Moderate",
@@ -3667,7 +3667,7 @@
                         "In Anticipo",
                         "Regolare",
                         "Ritardo Moderato",
-                        "Ritardo Grave"
+                        "Ritardo ≥ 5 min"
                       ]
                     },
                     "type": "categorical"
@@ -3748,7 +3748,7 @@
               "frame": {
                 "showTitle": true,
                 "title": {
-                  "value": "Rischio di Ritardo Grave per Stato Attuale",
+                  "value": "Rischio di Ritardo ≥ 5 min per Stato Attuale",
                   "fields": []
                 }
               },
@@ -3765,9 +3765,9 @@
                     "type": "number-percent"
                   },
                   "axis": {
-                    "title": "Tasso di Ritardi Gravi"
+                    "title": "Tasso di Ritardi ≥ 5 min"
                   },
-                  "displayName": "Tasso di Ritardi Gravi",
+                  "displayName": "Tasso di Ritardi ≥ 5 min",
                   "scale": {
                     "type": "quantitative"
                   }
@@ -3790,11 +3790,11 @@
                       },
                       {
                         "value": "Major Delay",
-                        "alias": "Ritardo Grave"
+                        "alias": "Ritardo ≥ 5 min"
                       },
                       {
                         "value": "Major",
-                        "alias": "Grave"
+                        "alias": "≥ 5 min"
                       },
                       {
                         "value": "Moderate",
@@ -3816,7 +3816,7 @@
                 },
                 "color": {
                   "fieldName": "max(Major Delay Rate)",
-                  "displayName": "Tasso di Ritardi Gravi",
+                  "displayName": "Tasso di Ritardi ≥ 5 min",
                   "scale": {
                     "colorRamp": {
                       "colors": {
@@ -3873,7 +3873,7 @@
                   ],
                   "filters": [
                     {
-                      "expression": "`Transition` IN ('Regolare → Regolare', 'Ritardo Moderato → Ritardo Moderato', 'Ritardo Grave → Ritardo Grave', 'Regolare → Ritardo Grave', 'Ritardo Grave → Regolare')"
+                      "expression": "`Transition` IN ('Regolare → Regolare', 'Ritardo Moderato → Ritardo Moderato', 'Ritardo ≥ 5 min → Ritardo ≥ 5 min', 'Regolare → Ritardo ≥ 5 min', 'Ritardo ≥ 5 min → Regolare')"
                     }
                   ],
                   "disaggregated": true
@@ -3921,7 +3921,7 @@
                       "type": "number-percent"
                     },
                     "headerAlignment": "right",
-                    "displayName": "Tasso di Ritardo Grave alla Fermata Successiva"
+                    "displayName": "Tasso di Ritardo ≥ 5 min alla Fermata Successiva"
                   },
                   {
                     "fieldName": "median_realized_next_stop_delay_seconds",
@@ -3972,7 +3972,7 @@
               "lines": [
                 "## Cosa Mostra Questo\n",
                 "\n",
-                "I ritardi gravi sono altamente persistenti. Quando sia la fermata precedente che quella attuale sono già in ritardo grave, l'88,7% delle osservazioni del dataset attuale rimane in ritardo grave alla fermata successiva. La variazione media del ritardo è vicina allo zero, indicando che i ritardi gravi tendono a persistere piuttosto che recuperare rapidamente."
+                "I ritardi ≥ 5 min sono altamente persistenti. Quando sia la fermata precedente che quella attuale sono già in ritardo ≥ 5 min, l'88,7% delle osservazioni del dataset attuale rimane in ritardo ≥ 5 min alla fermata successiva. La variazione media del ritardo è vicina allo zero, indicando che i ritardi ≥ 5 min tendono a persistere piuttosto che recuperare rapidamente."
               ]
             }
           },
@@ -4063,28 +4063,28 @@
                     "type": "alias",
                     "mappings": [
                       {
-                        "alias": "Grave → Anticipo",
-                        "value": "Ritardo Grave → In Anticipo"
+                        "alias": "≥ 5 min → Anticipo",
+                        "value": "Ritardo ≥ 5 min → In Anticipo"
                       },
                       {
-                        "alias": "Grave → Regolare",
-                        "value": "Ritardo Grave → Regolare"
+                        "alias": "≥ 5 min → Regolare",
+                        "value": "Ritardo ≥ 5 min → Regolare"
                       },
                       {
-                        "alias": "Grave → Moderato",
-                        "value": "Ritardo Grave → Ritardo Moderato"
+                        "alias": "≥ 5 min → Moderato",
+                        "value": "Ritardo ≥ 5 min → Ritardo Moderato"
                       },
                       {
-                        "alias": "Grave → Grave",
-                        "value": "Ritardo Grave → Ritardo Grave"
+                        "alias": "≥ 5 min → ≥ 5 min",
+                        "value": "Ritardo ≥ 5 min → Ritardo ≥ 5 min"
                       },
                       {
-                        "alias": "Grave → Sconosciuto",
-                        "value": "Ritardo Grave → Sconosciuto"
+                        "alias": "≥ 5 min → Sconosciuto",
+                        "value": "Ritardo ≥ 5 min → Sconosciuto"
                       },
                       {
-                        "alias": "Regolare → Grave",
-                        "value": "Regolare → Ritardo Grave"
+                        "alias": "Regolare → ≥ 5 min",
+                        "value": "Regolare → Ritardo ≥ 5 min"
                       },
                       {
                         "alias": "Regolare → Moderato",
@@ -4103,24 +4103,24 @@
                         "value": "Ritardo Moderato → Ritardo Moderato"
                       },
                       {
-                        "alias": "Moderato → Grave",
-                        "value": "Ritardo Moderato → Ritardo Grave"
+                        "alias": "Moderato → ≥ 5 min",
+                        "value": "Ritardo Moderato → Ritardo ≥ 5 min"
                       },
                       {
                         "alias": "Moderato → Sconosciuto",
                         "value": "Ritardo Moderato → Sconosciuto"
                       },
                       {
-                        "alias": "Anticipo → Grave",
-                        "value": "In Anticipo → Ritardo Grave"
+                        "alias": "Anticipo → ≥ 5 min",
+                        "value": "In Anticipo → Ritardo ≥ 5 min"
                       },
                       {
                         "alias": "Anticipo → Moderato",
                         "value": "In Anticipo → Ritardo Moderato"
                       },
                       {
-                        "alias": "Sconosciuto → Grave",
-                        "value": "Sconosciuto → Ritardo Grave"
+                        "alias": "Sconosciuto → ≥ 5 min",
+                        "value": "Sconosciuto → Ritardo ≥ 5 min"
                       },
                       {
                         "alias": "Sconosciuto → Moderato",
@@ -4244,28 +4244,28 @@
                     "type": "alias",
                     "mappings": [
                       {
-                        "alias": "Grave → Anticipo",
-                        "value": "Ritardo Grave → In Anticipo"
+                        "alias": "≥ 5 min → Anticipo",
+                        "value": "Ritardo ≥ 5 min → In Anticipo"
                       },
                       {
-                        "alias": "Grave → Regolare",
-                        "value": "Ritardo Grave → Regolare"
+                        "alias": "≥ 5 min → Regolare",
+                        "value": "Ritardo ≥ 5 min → Regolare"
                       },
                       {
-                        "alias": "Grave → Moderato",
-                        "value": "Ritardo Grave → Ritardo Moderato"
+                        "alias": "≥ 5 min → Moderato",
+                        "value": "Ritardo ≥ 5 min → Ritardo Moderato"
                       },
                       {
-                        "alias": "Grave → Grave",
-                        "value": "Ritardo Grave → Ritardo Grave"
+                        "alias": "≥ 5 min → ≥ 5 min",
+                        "value": "Ritardo ≥ 5 min → Ritardo ≥ 5 min"
                       },
                       {
-                        "alias": "Grave → Sconosciuto",
-                        "value": "Ritardo Grave → Sconosciuto"
+                        "alias": "≥ 5 min → Sconosciuto",
+                        "value": "Ritardo ≥ 5 min → Sconosciuto"
                       },
                       {
-                        "alias": "Regolare → Grave",
-                        "value": "Regolare → Ritardo Grave"
+                        "alias": "Regolare → ≥ 5 min",
+                        "value": "Regolare → Ritardo ≥ 5 min"
                       },
                       {
                         "alias": "Regolare → Moderato",
@@ -4284,24 +4284,24 @@
                         "value": "Ritardo Moderato → Ritardo Moderato"
                       },
                       {
-                        "alias": "Moderato → Grave",
-                        "value": "Ritardo Moderato → Ritardo Grave"
+                        "alias": "Moderato → ≥ 5 min",
+                        "value": "Ritardo Moderato → Ritardo ≥ 5 min"
                       },
                       {
                         "alias": "Moderato → Sconosciuto",
                         "value": "Ritardo Moderato → Sconosciuto"
                       },
                       {
-                        "alias": "Anticipo → Grave",
-                        "value": "In Anticipo → Ritardo Grave"
+                        "alias": "Anticipo → ≥ 5 min",
+                        "value": "In Anticipo → Ritardo ≥ 5 min"
                       },
                       {
                         "alias": "Anticipo → Moderato",
                         "value": "In Anticipo → Ritardo Moderato"
                       },
                       {
-                        "alias": "Sconosciuto → Grave",
-                        "value": "Sconosciuto → Ritardo Grave"
+                        "alias": "Sconosciuto → ≥ 5 min",
+                        "value": "Sconosciuto → Ritardo ≥ 5 min"
                       },
                       {
                         "alias": "Sconosciuto → Moderato",
@@ -4459,7 +4459,7 @@
             "spec": {
               "frame": {
                 "showTitle": true,
-                "title": "Ritardi Gravi Previsti"
+                "title": "Ritardi ≥ 5 min Previsti"
               },
               "version": 2,
               "widgetType": "counter",
@@ -4509,7 +4509,7 @@
             "spec": {
               "frame": {
                 "showTitle": true,
-                "title": "Tasso Previsto di Ritardi Gravi"
+                "title": "Tasso Previsto di Ritardi ≥ 5 min"
               },
               "version": 2,
               "widgetType": "counter",
@@ -4738,7 +4738,7 @@
                 },
                 "description": {
                   "fields": [],
-                  "value": "Top 10 linee per probabilità media prevista di ritardo grave (minimo 10 osservazioni valutate)."
+                  "value": "Top 10 linee per probabilità media prevista di ritardo ≥ 5 min (minimo 10 osservazioni valutate)."
                 }
               },
               "version": 3,
@@ -4884,7 +4884,7 @@
                   {
                     "fieldName": "predicted_major_delay",
                     "headerAlignment": "center",
-                    "displayName": "Ritardo Grave Previsto"
+                    "displayName": "Ritardo ≥ 5 min Previsto"
                   },
                   {
                     "fieldName": "current_arrival_delay_seconds",
@@ -4953,7 +4953,7 @@
                 "showDescription": true,
                 "title": "Fermate con Rischio Previsto Più Alto",
                 "description": {
-                  "value": "Top 15 fermate per probabilità massima prevista di ritardo grave.",
+                  "value": "Top 15 fermate per probabilità massima prevista di ritardo ≥ 5 min.",
                   "fields": []
                 }
               },
@@ -5399,7 +5399,7 @@
                   {
                     "fieldName": "predicted_major_delay",
                     "headerAlignment": "center",
-                    "displayName": "Ritardo Grave Previsto"
+                    "displayName": "Ritardo ≥ 5 min Previsto"
                   },
                   {
                     "fieldName": "active_alert",
@@ -5427,12 +5427,12 @@
               "lines": [
                 "### Fasce di Rischio\n",
                 "\n",
-                "Le fasce di rischio rappresentano la probabilità prevista di ritardo grave alla fermata successiva:\n",
+                "Probabilità di ritardo alla fermata successiva ≥ 5 min (proxy GTFS-RT). Fasce di probabilità, distinte dalle fasce di ritardo in secondi:\n",
                 "\n",
-                "**Rischio Basso:** Probabilità ≤ 30%  \n",
-                "**Rischio Medio:** Probabilità > 30% e ≤ 50%  \n",
-                "**Rischio Alto:** Probabilità > 50% e ≤ 70%  \n",
-                "**Rischio Critico:** Probabilità > 70%"
+                "**Rischio Basso:** p < 20%  \n",
+                "**Rischio Medio:** 20% ≤ p ≤ 45%  \n",
+                "**Rischio Alto:** 45% < p < 80%  \n",
+                "**Rischio Critico:** p ≥ 80%"
               ]
             }
           },
@@ -5440,7 +5440,7 @@
             "x": 0,
             "y": 30,
             "width": 12,
-            "height": 2
+            "height": 3
           }
         }
       ],
@@ -6010,7 +6010,7 @@
             "name": "threshold_text",
             "multilineTextboxSpec": {
               "lines": [
-                "**Semantica:** Ritardo grave previsto quando probabilità > 45%\n",
+                "**Semantica:** Ritardo alla fermata successiva ≥ 5 min previsto con p > 45%; p = 45% resta negativo. Outcome: proxy futuro GTFS-RT.\n",
                 "\n",
                 "**F1 soglia predefinita (0.50):** 83,74%  \n",
                 "**F1 soglia ottimizzata (0.45):** 83,89%  \n",
@@ -6022,7 +6022,7 @@
             "x": 6,
             "y": 12,
             "width": 6,
-            "height": 2
+            "height": 3
           }
         },
         {
@@ -6103,7 +6103,7 @@
           },
           "position": {
             "x": 0,
-            "y": 14,
+            "y": 15,
             "width": 12,
             "height": 4
           }
@@ -6121,7 +6121,7 @@
           },
           "position": {
             "x": 0,
-            "y": 18,
+            "y": 19,
             "width": 12,
             "height": 2
           }
@@ -6191,9 +6191,9 @@
           },
           "position": {
             "x": 0,
-            "y": 20,
+            "y": 21,
             "width": 12,
-            "height": 4
+            "height": 5
           }
         }
       ],

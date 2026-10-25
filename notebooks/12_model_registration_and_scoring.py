@@ -3,6 +3,9 @@
 # MAGIC # Model Registration and Batch Scoring
 # MAGIC Refit the frozen Random Forest classifier on historically eligible data and generate auditable batch predictions with an explicit Persistence regression rule. Historical notebook 11 test metrics remain reference results, not estimates for this full-data refit.
 
+# MAGIC
+# MAGIC Canonical event next_stop_delay_ge_300s: future GTFS-RT next-stop proxy >=300s, displayed as Ritardo >= 5 min. This notebook refits and replays labeled history; projecting labels away does not make the scoring population independent of future labeling.
+
 # COMMAND ----------
 
 # MAGIC %md
