@@ -2,7 +2,7 @@
 
 ## Scope and deployment status
 
-Repository implementation only. PR2 does not migrate or modify Databricks tables, deploy notebooks, change Jobs/schedules, or execute ingestion. Notebook 05 is the production writer; notebook 04 remains a historical exploration/bootstrap notebook and must not be scheduled alongside it. Notebook 06 is unchanged. ML, features, labels, Gold and dashboard artifacts are unchanged.
+PR2 was merged as repository code without runtime changes. A separately authorized controlled rollout on 25 October 2026 applied the additive audit migration and deployed notebooks 05, 07 and 99 from main merge `ae7f9ef11724daaf7bb1cd3e9530673d1c7ef9a8`. The manual production ingestion run succeeded; detailed evidence and remaining validation limits follow below. Notebook 05 is the production writer; notebook 04 remains a historical exploration/bootstrap notebook and must not be scheduled alongside it. Notebook 06 is unchanged. ML, features, labels, Gold and dashboard artifacts are unchanged.
 
 The three GTFS entity table schemas and parser payloads remain unchanged. The audit extension and notebook 07 empty-alert alignment require the explicit rollout below. Do not deploy notebook 05 before the audit migration: preflight verifies column names/types and fails before network retrieval or entity writes.
 
@@ -16,12 +16,12 @@ Zero parsed rows with nonzero entities is not labeled an empty feed. A TripUpdat
 
 NETWORK_ERROR, HTTP_ERROR, INCOMPLETE_READ, DECODE_ERROR, PARSE_ERROR, INVALID_FEED_METADATA, WRITE_ERROR and UNKNOWN_ERROR are stable categories. Original error_message is retained. Metadata known before failure remains available; unknown parsed/duplicate counts are NULL. The legacy non-null rows_appended=0 on a failure is not proof that a timed-out write could not commit.
 
-## Additive audit migration — review and execute separately
+## Additive audit migration â€” applied during the authorized rollout
 
 Existing table: rome_transport.bronze.ingestion_runs. Preserve its seven existing columns:
 run_timestamp TIMESTAMP, source_name STRING, feed_timestamp BIGINT, entities_received BIGINT, rows_appended BIGINT, status STRING, error_message STRING.
 
-An authorized operator must apply the following additive migration before deploying the new writer. This SQL is documentation, not executed by CI or the notebook:
+The authorized rollout applied the following nine missing columns after checking all seven legacy column types. This SQL remains documentation; CI and the writer do not execute it automatically:
 
 ```sql
 ALTER TABLE rome_transport.bronze.ingestion_runs ADD COLUMNS (
@@ -51,7 +51,7 @@ Each execution appends a BATCH RUNNING record before acquisition, then one SOURC
 - PARTIAL_SUCCESS: at least one source succeeded and one failed.
 - FAILED: every source failed, or an audit/finalization failure prevents a usable batch record.
 
-All sources are attempted even after a source failure. After terminal audit persistence, PARTIAL_SUCCESS and FAILED raise a task error so existing Job failure notifications can apply. No Job setting is changed. Scheduled retry/notification behavior must be validated in an authorized runtime test before rollout.
+All sources are attempted even after a source failure. After terminal audit persistence, PARTIAL_SUCCESS and FAILED raise a task error so existing Job failure notifications can apply. No Job setting is changed. The authorized happy-path runtime test passed. Same-snapshot retry and failure notification delivery remain untested in production; failure propagation is covered by code review and offline tests.
 
 An initial audit-write failure stops before source writes. A later audit-write failure is not swallowed: remaining sources are attempted and final status is FAILED. A final audit-write failure propagates. Cross-table writes are not atomic: a process crash or storage outage can still leave entity commits without their audit outcome; a RUNNING-only attempt means incomplete/unknown. This PR does not claim exactly-once audit transactions.
 
@@ -75,4 +75,74 @@ No enrichment is run in PR2. Applying new empty-snapshot evidence requires a sep
 
 Tests extract production function definitions with AST, avoiding notebook top-level execution. Mocked protobuf-like objects and in-memory DataFrame doubles cover header metadata, zero entities, decode/error paths, source/batch status, audit failures, explicit retry IDs, null-safe anti-join and duplicate conflicts. They do not replace an actual protobuf/Spark/Delta integration test.
 
-Before deployment: review migration, verify Spark schema compatibility, test empty/nonempty FULL and rejected DIFFERENTIAL payloads offline or in an approved isolated runtime, confirm append idempotency and audit behavior, validate notebook 07's empty-alert fixture, and verify task failure notifications. Do not execute the existing notebook 04 exploration cells as a deployment procedure. No new package is required by the runtime implementation.
+Runtime validation below covers schema compatibility, nonempty FULL feeds, audit persistence and append integrity. Remaining follow-up: same-snapshot retries in an isolated Spark/Delta environment, real protobuf empty/Differential integration, notebook 07 fixture execution without a downstream refresh, and failure notification delivery. Do not execute the existing notebook 04 exploration cells as a deployment procedure. No new package is required by the runtime implementation.
+
+
+## Controlled runtime rollout evidence
+
+Main deployed: `ae7f9ef11724daaf7bb1cd3e9530673d1c7ef9a8` (PR2 merge). All three deployed sources were re-exported and compared with main. The existing runtime 05/07 exports matched the PR1 baseline exactly before replacement; their prior object IDs and source backups were retained in the operator evidence bundle. Notebook 99 was absent from this runtime folder and was created from main. Notebook 04 remains unscheduled/exploratory; 06 and 08+ were not changed.
+
+Workspace folder: `/Workspace/Users/matteo.cavo.data@gmail.com/Rome Public Transport Reliability & Delay Prediction/notebooks`.
+
+| Notebook | Object ID | Runtime action |
+| --- | --- | --- |
+| `05_gtfs_realtime_pipeline` | 212980067827057 | Updated and executed by its existing Job |
+| `07_gtfs_realtime_enrichment` | 212980067827075 | Updated only; no enrichment execution |
+| `99_realtime_pipeline_health_check` | 95918530668650 | Created; all seven SQL cells executed through the SQL warehouse |
+
+### Migration and rollback baseline
+
+The stable pre-migration `ingestion_runs` version was **10501**, with **10,173 rows** and the seven legacy fields listed above. DESCRIBE TABLE EXTENDED, table properties, recent Delta history and the latest 20 audit records were captured before migration. The additive ALTER created version **10502** without changing the row count; all nine new columns were NULL on all 10,173 legacy records. No backfill, property change, OPTIMIZE or VACUUM was requested. Existing automatic Delta optimization appeared in the pre-rollout history and was not initiated by this rollout.
+
+After the manual run the audit was version **10507**, with **10,178 rows**: precisely five new records. The seven original columns retain their names/types and the nine additions retain the documented types.
+
+Rollback was not needed. The prepared recovery point is audit version 10501 plus the exported prior notebook sources. If rollback becomes necessary, pause the trigger and wait for active runs, preserve subsequent audit evidence, restore the old writer together with the compatible audit schema/data using a separately authorized `RESTORE TABLE rome_transport.bronze.ingestion_runs TO VERSION AS OF 10501`, then re-import the saved 05/07 sources. Notebook 99 was newly created, so it has no prior revision. Time Travel availability must be rechecked before recovery; restoration would remove post-baseline audit records from the current view, so it is not an automatic or lossless operational rollback. Bronze entity rows need no rollback for this append-only successful run. Do not resume the legacy writer against the extended schema without validating append compatibility.
+
+### Manual run and audit outcomes
+
+[Controlled Job run 588842343799032](https://dbc-53d4ca74-894f.cloud.databricks.com/?o=7474647743124164#job/195066091322974/run/588842343799032) completed SUCCESS. Task run: 401724133439920. Logical batch: `b5ea5cf1-e87a-4c3b-bf9b-5b452ea33076`; attempt: `b72364ae-cfe2-4138-8042-7c443a3d5994`.
+
+Exactly one BATCH RUNNING, three SOURCE SUCCESS and one terminal BATCH SUCCESS were persisted. Every source had the same non-null batch/attempt IDs, a positive feed timestamp, `FULL_DATASET`, `DECODED`, `is_empty=false` and NULL error fields.
+
+| Source | Feed timestamp | Entities | Parsed rows | Appended | Duplicates |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| trip_updates | 1792938901 | 700 | 13,514 | 13,480 | 34 |
+| vehicle_positions | 1792939051 | 667 | 667 | 667 | 0 |
+| service_alerts | 1792938901 | 128 | 128 | 128 | 0 |
+
+The 34 discarded Trip Update rows demonstrate duplicate elimination within this input; they are not a same-snapshot retry test.
+
+### Bronze integrity
+
+The baseline was captured after the last old-writer scheduled run had terminated and while the trigger was paused.
+
+| Table | Delta version before / after manual run | Rows before / after | Duplicate groups / excess rows, unchanged |
+| --- | --- | --- | --- |
+| trip_updates | 3874 / 3875 | 55,937,673 / 55,951,153 | 232,698 / 236,180 |
+| vehicle_positions | 3533 / 3534 | 2,898,974 / 2,899,641 | 138 / 138 |
+| service_alerts | 3501 / 3502 | 517,767 / 517,895 | 0 / 0 |
+
+All three entity schemas matched before/after. `EXCEPT ALL` from each pinned pre-run version to its pinned post-run version returned zero missing or changed rows, including payload and ingestion fields. Row-count deltas matched source rows_appended exactly. Grouping on the documented keys, including NULL keys, showed no duplicate growth. Historical duplicates were preserved, not repaired or hidden. Feed timestamps advanced from the previous snapshot.
+
+### Job, health checks and remaining limits
+
+Job **195066091322974** still has one task pointing to notebook 05, a 10-minute periodic trigger, `max_concurrent_runs=1`, queue enabled and the original failure email notification. The trigger was temporarily PAUSED, an already-started old-writer run was allowed to finish, and the original UNPAUSED trigger was restored. A complete comparison of Job settings before and after restoration matched exactly. No compute, task, retry or notification configuration was changed permanently.
+
+All seven notebook 99 SQL cells succeeded. Source queries excluded `__batch__`; latest success/failure remained available across legacy and new rows; SOURCE details and both BATCH events were visible. Successful-empty query executed successfully with zero observations, which does not prove a live empty feed occurred.
+
+The 20 offline tests and notebook compilation passed again. FULL nonempty feeds and Spark/Delta production writes were observed. Valid empty FULL, rejected DIFFERENTIAL, null-safe same-snapshot retry, new attempt IDs under a supplied stable batch ID, and PARTIAL_SUCCESS/failure-after-audit remain supported by offline tests; no intentional production failure or replay was introduced. Failure email delivery was not exercised. No separate isolated Spark notebook was created. Notebook 07 was deployed but not executed, so its empty-alert timeline is code/offline-verified and existing enriched output remains unchanged.
+
+ML training/scoring/registration, Gold, dashboard, Power BI and the app repository were untouched. No downstream refresh was run.
+
+
+### First scheduled observation after restoration
+
+[Periodic run 1030587734568633](https://dbc-53d4ca74-894f.cloud.databricks.com/?o=7474647743124164#job/195066091322974/run/1030587734568633) started automatically after trigger restoration and completed SUCCESS. It persisted the expected five records under new logical batch `6e821354-466c-4e97-a8f7-f2ed895fe9ef` and attempt `d0daff62-c731-412f-a022-a72cbe0bb8d9`. All three sources were SUCCESS, DECODED, FULL_DATASET, nonempty and without errors; terminal BATCH was SUCCESS.
+
+| Source | Entities | Parsed | Appended | Duplicates |
+| --- | ---: | ---: | ---: | ---: |
+| trip_updates | 684 | 13,627 | 13,579 | 48 |
+| vehicle_positions | 684 | 684 | 684 | 0 |
+| service_alerts | 128 | 128 | 128 | 0 |
+
+Each new feed timestamp was newer than the manual run. No duplicate keys were present in these new snapshots, and total row-count increments matched the three append counts. This confirms operational scheduled ingestion within the observed window, not a guarantee against future feed or infrastructure failures. The offline-only limitations above remain open; no additional production replay or failure injection was used.
