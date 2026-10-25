@@ -1,14 +1,14 @@
 # Rome Public Transport Reliability & Delay Prediction
 
-Un progetto end-to-end su Databricks che trasforma i feed del trasporto pubblico di Roma in analisi storiche dell'affidabilità, previsioni del ritardo alla fermata successiva e una dashboard operativa di Business Intelligence.
+Un lakehouse Databricks per i feed del trasporto pubblico di Roma, con analisi storiche dell'affidabilità, ricerca predittiva e dashboard di Business Intelligence. Il nuovo target operativo separa i dati Databricks dal futuro runtime ML FastAPI/Python/scikit-learn.
 
 **Stack:** Databricks · Apache Spark / PySpark · Delta Lake · Unity Catalog · MLflow · Databricks SQL · Databricks AI/BI Dashboards · Python · SQL
 
-**Stato al 25 ottobre 2026:** sono implementati il percorso dall'acquisizione dei dati alle analisi Gold e la dashboard Databricks su cinque pagine. Persistence è la soluzione finale di regressione; Random Forest è il classificatore finale. La registrazione del modello è rinviata per un limite dell'ambiente. Il contratto semantico corrente allinea il JSON dashboard e la documentazione all’evento ≥300 secondi; dati e modelli non vengono ricalcolati.
+**Stato al 25 ottobre 2026:** ingestion Bronze pianificata e operativa; Silver/features/scoring fermi al 2 ottobre. Gold e dashboard documentano snapshot storiche. Persistence e Random Forest sono i risultati ML storici di riferimento. Il percorso operativo Spark ML è sostituito dal target esterno FastAPI/sklearn: contratti implementati in questo repository, backend ancora da realizzare. Nessuna previsione live dichiarata. [Decisione architetturale](docs/ARCHITECTURE_DECISIONS.md), [contratti e misure](docs/OPERATIONAL_ML_HANDOFF.md), [roadmap](docs/ROADMAP.md).
 
 ## Anteprima Dashboard
 
-**Aggiornamento semantico:** il JSON e i testi correnti usano “Ritardo ≥ 5 min”. PDF e screenshot sono aggiornati dal nuovo export in tema chiaro, con il contratto semantico corrente.
+**Export storico:** PDF e screenshot in tema chiaro conservano la dashboard precedente alla transizione architetturale. Alcuni testi di deployment/freshness e note metriche sono da correggere: non rappresentano il runtime operativo target. Il JSON locale contiene le correzioni; live publish e rigenerazione degli artifact richiedono un rollout separato. [Audit e piano preciso](dashboard/databricks/README.md).
 
 <p align="center">
   <img src="dashboard/databricks/screenshots/overview.png"
@@ -28,12 +28,17 @@ La [metodologia PACE](docs/PACE.md) documenta le motivazioni progettuali, le dec
 
 ```text
 Feed ufficiali GTFS Static + GTFS-Realtime
-  → Bronze → Silver → Feature Engineering → Etichettatura con osservazioni future
-  → ML / MLflow → batch scoring → Analisi Gold
-  → Databricks SQL / Dashboard AI/BI
+  → Databricks Bronze → Silver → feature osservabili / etichette offline
+  → contratti versionati via Databricks SQL
+  → futuro FastAPI / sklearn: training, valutazione, artifact, inference
+  → futura prediction history → Gold / serving → API → React
+Databricks orchestration: ingestion / Silver / enrichment / feature preparation
+n8n: futura readiness / chiamate backend / retry / alert cross-system
+Google AI Studio: futura generazione e iterazione UX/UI React
+Dashboard AI/BI / Power BI separato: analisi curate, con date esplicite
 ```
 
-Le tabelle Delta sono governate tramite Unity Catalog. La dashboard interroga esclusivamente dataset Gold curati. Il tracciamento degli esperimenti con MLflow è completato; la registrazione degli artefatti del modello per l'uso in produzione è un passaggio distinto, ancora irrisolto.
+Le tabelle Delta sono governate tramite Unity Catalog. La dashboard interroga esclusivamente Gold. Il diagramma descrive il target: solo ingestion è pianificata oggi; orchestrazione downstream, backend, n8n e frontend sono attività future. Il tracciamento MLflow e i notebook Spark restano **ML storico / sperimentale**, conservati come ricerca e riferimento. Spark PipelineModel non è il runtime operativo target: smoke bloccato dalla whitelist Spark Connect e classic compute non disponibile nel workspace Free. [ADR-001](docs/ARCHITECTURE_DECISIONS.md).
 
 ## Fonti dei dati
 
@@ -54,7 +59,8 @@ I file GTFS Static di riferimento rimangono localmente in `data/reference/gtfs_s
 | 09 | Etichettatura futura della fermata successiva, provenienza e filtro di qualità delle etichette |
 | 10 | Confronto tra baseline ed esperimenti di regressione/classificazione |
 | 11 | Tuning su validation, selezione finale e valutazione TEST a decisioni congelate |
-| 12 | Tentativo di registrazione e batch scoring con impostazione assimilabile alla produzione |
+| 12 | Tentativo storico di registrazione e replay batch; percorso di riferimento |
+| 12 common / 12a / 12b | Implementazione Spark di riferimento per persistenza/inference; gate OFF, percorso operativo sostituito |
 | 13 | Analisi Gold, controlli di qualità e metadati di aggiornamento |
 | 99 | Controlli sullo stato della pipeline realtime |
 
@@ -110,7 +116,7 @@ Il filtro preserva ritardi severi ma plausibili ed evita che artefatti di circa 
 
 I conteggi si riferiscono alle osservazioni: snapshot ripetute possono generare più righe per la stessa corsa e fermata. La copertura riguarda i feed etichettati, non l'intero servizio programmato né un'affidabilità ponderata per passeggeri.
 
-## Risultati di Machine Learning
+## Risultati storici di Machine Learning
 
 ### Regressione: Persistence
 
@@ -123,7 +129,7 @@ I conteggi si riferiscono alle osservazioni: snapshot ripetute possono generare 
 | R² | 0.6940 |
 | WAPE | 0.3293 |
 
-### Classificazione: RandomForestClassifier
+### Classificazione storica: RandomForestClassifier
 
 Configurazione congelata: `numTrees=100`, `maxDepth=10`, `minInstancesPerNode=5`, `featureSubsetStrategy="sqrt"`, `maxBins=32`, `seed=42`.
 
@@ -142,7 +148,7 @@ Il confronto è **strettamente maggiore**: la soglia è stata fissata prima dell
 | ROC-AUC | 0.9690 |
 | PR-AUC | 0.9063 |
 
-Sono risultati di valutazione congelati, non prestazioni ricalcolate sul riaddestramento con l'intero storico o sull'ultimo batch di scoring.
+**Metriche TEST storiche di riferimento:** risultati Spark congelati, non prestazioni del futuro modello sklearn. `historical_model_threshold = 0.45`; la soglia del nuovo modello operativo dovrà essere validata nella nuova valutazione. Nessuna conversione automatica Spark RF → sklearn RF o equivalenza degli iperparametri è assunta.
 
 ### Contratto semantico: Ritardo ≥ 5 min
 
@@ -155,13 +161,13 @@ L'evento canonico `next_stop_delay_ge_300s` indica il **proxy GTFS-Realtime del 
 | Moderato (`moderate_delay`) | `[180, 300)` |
 | Ritardo ≥ 5 min (`major_delay`) | `>= 300` |
 
-Le fasce di probabilità sono: Basso `p < 0.20`, Medio `0.20 <= p <= 0.45`, Alto `0.45 < p < 0.80`, Critico `p >= 0.80`. Il flag positivo usa **strettamente `p > 0.45`**: a `p = 0.45` la classificazione resta negativa.
+Le fasce di probabilità storiche sono: Basso `p < 0.20`, Medio `0.20 <= p <= 0.45`, Alto `0.45 < p < 0.80`, Critico `p >= 0.80`. Il flag Spark storico usa **strettamente `p > 0.45`**: a `p = 0.45` resta negativo. Target ≥300 secondi invariato; soglia e calibrazione del futuro modello saranno rivalidate.
 
 `current_status` è lo stato GTFS del veicolo, non una fascia di severità del ritardo. `is_currently_delayed_flag` indica `current_arrival_delay_seconds > 60`: è una feature distinta dal target ML. Persistence mantiene il delay corrente, con fallback **−71 secondi** per NULL/NaN. Colonne tecniche, formule e risultati restano invariati.
 
-**PR3 - rollout runtime validato il 25 ottobre 2026:** helper e notebook 08/scoring distribuiti dal merge `c343f1e`. Parità Spark old/new PASS su scope deterministico; staging `rome_transport.features.next_stop_delay_scoring` creata in Delta v0 con 24.797 righe e contratto invariato (42 numerical + 5 categorical). Nessun training o scoring modello eseguito. La sorgente è Silver v8, ultima snapshot del 2 ottobre: staging dell’ultimo input disponibile, non feed corrente fresco. Overwrite controllato, gate di default ancora disabilitato, nessuna prediction history. [Evidenze runtime, missingness e limiti](docs/CURRENT_SCORING.md).
+**PR3 - rollout runtime validato il 25 ottobre 2026:** helper e notebook 08/scoring distribuiti dal merge `c343f1e`. Parità Spark old/new PASS su scope deterministico; staging `rome_transport.features.next_stop_delay_scoring` creata in Delta v0 con 24.797 righe e contratto invariato (42 numeriche + 5 categoriche). Nessun training o scoring modello eseguito. La sorgente è Silver v8, ultima snapshot del 2 ottobre: staging dell’ultimo input disponibile, non feed corrente fresco. Overwrite controllato, gate di default ancora disabilitato, nessuno storico delle prediction. [Evidenze runtime, valori mancanti e limiti](docs/CURRENT_SCORING.md).
 
-**PR4 - pipeline persistita e inference separata (solo repository):** nuovi percorsi `12a_fit_persist_final_classifier` e `12b_score_current_input`, con helper condiviso, artifact MLflow Spark completo e caricamento obbligatoriamente verificato. Inference solo tramite `transform()`, senza refit o lettura del labeled dataset. Contratto 47 feature, RF e soglia stretta >0.45 invariati; gate runtime OFF, UC registration opzionale e nessuna scrittura prediction. Persistenza/load reali richiedono rollout autorizzato; la sorgente scoring resta storica perché Silver è stale. [Artifact, metadata, metriche e rollout](docs/MODEL_SERVING.md).
+**PR4 - implementazione Spark di riferimento:** `12a_fit_persist_final_classifier`, `12b_score_current_input` e helper conservano il disegno di persistenza completa e inference separata, con gate OFF. Il rollout ha verificato MLflow tracking, ma lo smoke Spark ML è fallito prima del fit; la richiesta di compute Dedicated è stata rifiutata. Nessun artifact operativo PR4 persistito o ricaricato. Il nuovo percorso operativo è esterno. [Stato e storia tecnica](docs/MODEL_SERVING.md).
 
 ## Batch scoring e registrazione
 
@@ -176,7 +182,7 @@ Le fasce di probabilità sono: Basso `p < 0.20`, Medio `0.20 <= p <= 0.45`, Alto
 
 Il batch verificato è `historical_latest_snapshot_replay`: scoring della snapshot del 2 ottobre 2026 dal labeled dataset v8, eseguito il 3 ottobre con sovrapposizione ai dati di refit. Le label sono escluse dagli input del modello, ma la popolazione deriva dal dataset etichettato; non è scoring corrente indipendente dalle label né un'API live. Un singolo batch non dimostra una tendenza predittiva né nuove prestazioni su dati mai osservati.
 
-Tracciamento MLflow, selezione finale e scoring sono completati. **La registrazione del modello in produzione non è completata**: la serializzazione degli artefatti SparkML in Unity Catalog è rinviata per una limitazione dell'attuale ambiente Databricks Serverless (`DEFERRED_SERVERLESS_LIMITATION`). Questo limite non invalida le previsioni batch già prodotte.
+Tracciamento MLflow, selezione e replay storico sono completati. Lo stato storico `DEFERRED_SERVERLESS_LIMITATION` resta conservato: nessuna registrazione Spark in produzione è riuscita. Il target FastAPI/sklearn possiederà i propri artifact e non dipenderà da UC model registration. Il replay esistente non viene modificato.
 
 ## Livello analitico Gold
 
@@ -230,7 +236,7 @@ La Panoramica Esecutiva è mostrata in apertura; qui seguono tre ulteriori pagin
        alt="Monitoraggio Predittivo"
        width="100%">
   <br>
-  <em>Monitoraggio Predittivo</em>
+  <em>Replay predittivo storico; testi dell'export precedente da riallineare</em>
 </p>
 
 <p align="center">
@@ -238,7 +244,7 @@ La Panoramica Esecutiva è mostrata in apertura; qui seguono tre ulteriori pagin
        alt="Prestazioni del Modello"
        width="100%">
   <br>
-  <em>Prestazioni del Modello</em>
+  <em>Prestazioni Spark storiche; note metriche/deployment dell'export da correggere</em>
 </p>
 
 L’interfaccia italiana è una scelta intenzionale, coerente con il contesto operativo della mobilità pubblica romana. Le fasce di rischio del JSON corrispondono al campo Gold `risk_band`: Basso p<0.20, Medio 0.20<=p<=0.45, Alto 0.45<p<0.80, Critico p>=0.80. Sono fasce di probabilità dell’evento ≥5 min, distinte dalla severità in secondi e dalla decisione binaria.
@@ -250,8 +256,12 @@ La dashboard è pubblicata **all'interno di Databricks e richiede autenticazione
 ```text
 README.md
 .gitignore
+contracts/
+  operational_ml.json
+  operational_ml.py
 dashboard/
   databricks/
+    README.md  [audit e rollout degli export storici]
     dashboard/
       Affidabilita_Trasporto_Pubblico_Roma.lvdash.json
     pdf/
@@ -270,6 +280,12 @@ data/
     gtfs_static/  [file sorgente locali ignorati da Git]
 docs/
   PACE.md
+  ARCHITECTURE_DECISIONS.md
+  OPERATIONAL_ML_HANDOFF.md
+  ROADMAP.md
+  CURRENT_SCORING.md
+  MODEL_SERVING.md
+  INGESTION_AUDIT.md
 notebooks/
   01_environment_setup.sql
   02_gtfs_static_bronze_ingestion.py
@@ -279,12 +295,18 @@ notebooks/
   06_gtfs_realtime_silver.py
   07_gtfs_realtime_enrichment.py
   08_feature_engineering.py
+  08_common_feature_preparation.py
+  08_current_scoring_dataset.py
   09_target_labeling.py
   10_model_training.py
   11_model_tuning_and_selection.py
   12_model_registration_and_scoring.py
+  12_common_persisted_classifier.py
+  12a_fit_persist_final_classifier.py
+  12b_score_current_input.py
   13_gold_analytics.py
   99_realtime_pipeline_health_check.sql
+tests/
 ```
 
 Git non versiona le directory vuote. Le impostazioni locali del workspace dell'editor sono ignorate e non compaiono nella struttura destinata alla pubblicazione.
@@ -293,16 +315,16 @@ Git non versiona le directory vuote. Le impostazioni locali del workspace dell'e
 
 Le osservazioni future GTFS-Realtime sono proxy operativi e possono ancora essere previsioni riviste. Posizioni mancanti o obsolete, variazioni degli orari e anomalie al cambio del giorno di servizio limitano l'interpretazione. Il filtro ±12 ore affronta artefatti diagnosticati: non è una soglia GTFS universale e non rende automaticamente invalidi i dati notturni.
 
-Otto date di servizio non dimostrano generalizzazione sul lungo periodo o sull'intera rete cittadina. I timestamp del feed non provano da soli l'effettiva disponibilità al momento dell'ingestion; l'ultimo batch non è una nuova valutazione su dati di test. La registrazione rimane rinviata, la dashboard richiede autenticazione e il contratto semantico è allineato nel JSON corrente; PDF e screenshot aggiornati documentano la presentazione corrente.
+Otto date di servizio non dimostrano generalizzazione sul lungo periodo o sull'intera rete cittadina. I timestamp del feed non provano da soli la disponibilità in ingestion; il replay non è una nuova valutazione TEST. La dashboard richiede autenticazione. PDF e screenshot sono export storici con issue dichiarate nell'audit, non prova di freshness o deployment operativo. Free Edition ha quote e nessuno SLA.
 
 ## Sviluppi futuri
 
-Risolvere la registrazione in un ambiente supportato; estendere il monitoraggio temporale e la valutazione per segmento; preparare la presentazione pubblica Power BI separata. Un'analisi più ampia della spiegabilità, una scheda del modello e un dizionario dei dati autonomi restano estensioni, non deliverable già completati.
+Seguire la [roadmap operativa](docs/ROADMAP.md): freshness downstream, futuro repository `rome-mobility-intelligence`, FastAPI/sklearn con nuova valutazione/persistenza, inference, prediction history, n8n, serving/API, React/Google AI Studio, AI insight e Power BI separato. Questo repository mantiene ingestion, lakehouse, contratti, analytics, Gold e metadati di freshness. Nessun repository app è creato da questa PR.
 
 ## Stato del progetto
 
-**Completati:** ingestion e pianificazione, Bronze/Silver, associazione causale delle posizioni, Feature Engineering, etichettatura futura e filtro di qualità, esperimenti MLflow, selezione su validation, valutazione TEST congelata, batch scoring, analisi Gold, Databricks SQL, dashboard AI/BI su cinque pagine ed export JSON/PDF per il portfolio.
+**Implementati e validati storicamente:** Bronze/Silver, associazione causale delle posizioni, Feature Engineering, etichettatura futura e filtro di qualità, esperimenti MLflow, selezione su validation, TEST congelato, replay batch, Gold, SQL e dashboard AI/BI. Ingestion pianificata operativa; il resto richiede refresh downstream. PDF/screenshot precedenti conservati come evidenza storica con issue dichiarate.
 
-**Rinviata:** registrazione del modello in produzione per il limite dell'ambiente attuale.
+**Percorso sostituito:** deployment Spark ML, conservato come implementazione storica/di riferimento; runtime operativo futuro FastAPI/sklearn.
 
-**Da completare:** distribuzione pubblica del portfolio. Non si dichiara un'API live, un modello registrato in produzione o un'adozione operativa a livello cittadino.
+**Da completare:** orchestrazione downstream e freshness, backend operativo e presentazione app; riallineamento live dashboard/PDF/screenshot autorizzato separatamente. Non si dichiara un'API live, un modello operativo già distribuito o adozione cittadina.

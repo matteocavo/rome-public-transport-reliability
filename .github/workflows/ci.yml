@@ -21,7 +21,7 @@ jobs:
           python-version: "3.11"
 
       - name: Validate Python notebook syntax
-        run: python -m compileall -q notebooks
+        run: python -m compileall -q notebooks contracts
 
       - name: Verify local contracts without Spark
         run: python -m unittest discover -s tests -p 'test_*.py' -v
@@ -47,6 +47,12 @@ jobs:
           required_files=(
             "README.md"
             "docs/PACE.md"
+            "docs/ARCHITECTURE_DECISIONS.md"
+            "docs/OPERATIONAL_ML_HANDOFF.md"
+            "docs/ROADMAP.md"
+            "contracts/operational_ml.json"
+            "contracts/operational_ml.py"
+            "dashboard/databricks/README.md"
             "dashboard/databricks/dashboard/Affidabilita_Trasporto_Pubblico_Roma.lvdash.json"
             "dashboard/databricks/pdf/Affidabilita_Trasporto_Pubblico_Roma.pdf"
             "dashboard/databricks/screenshots/overview.png"

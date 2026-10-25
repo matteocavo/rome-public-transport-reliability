@@ -848,75 +848,21 @@
       "displayName": "Deployment Status",
       "queryLines": [
         "WITH latest AS (\n",
-        "  SELECT\n",
-        "    'Configurato' AS scoring_status,\n",
-        "    CASE\n",
-        "      WHEN lower(quality_status) LIKE '%pass%' THEN 'Superato'\n",
-        "      ELSE quality_status\n",
-        "    END AS quality_label,\n",
-        "    CASE\n",
-        "      WHEN\n",
-        "        lower(dashboard_ready) LIKE '%true%'\n",
-        "        OR lower(dashboard_ready) LIKE '%ready%'\n",
-        "        OR lower(dashboard_ready) LIKE '%yes%'\n",
-        "      THEN\n",
-        "        'Pronto'\n",
-        "      ELSE dashboard_ready\n",
-        "    END AS dashboard_label,\n",
-        "    CASE\n",
-        "      WHEN lower(registration_status) LIKE '%defer%' THEN 'Differito'\n",
-        "      ELSE registration_status\n",
-        "    END AS registry_label,\n",
-        "    classification_threshold,\n",
-        "    refresh_timestamp\n",
-        "  FROM\n",
-        "    rome_transport.gold.analytics_refresh_metadata\n",
-        "  ORDER BY\n",
-        "    refresh_timestamp DESC\n",
-        "  LIMIT 1\n",
+        "  SELECT quality_status\n",
+        "  FROM rome_transport.gold.analytics_refresh_metadata\n",
+        "  ORDER BY refresh_timestamp DESC LIMIT 1\n",
         ")\n",
-        "SELECT\n",
-        "  'Scoring' AS status_item,\n",
-        "  scoring_status AS status_value,\n",
-        "  'Pipeline di elaborazione predittiva configurata per l''ultimo aggiornamento disponibile.' AS status_note\n",
-        "FROM\n",
-        "  latest\n",
+        "SELECT 'Scoring' AS status_item, 'Replay storico' AS status_value,\n",
+        "  'Snapshot del 2 ottobre 2026; non inference live.' AS status_note FROM latest\n",
         "UNION ALL\n",
-        "SELECT\n",
-        "  'Qualità',\n",
-        "  quality_label,\n",
-        "  CASE\n",
-        "    WHEN\n",
-        "      quality_label = 'Superato'\n",
-        "    THEN\n",
-        "      'Controlli di qualità superati per l''aggiornamento corrente.'\n",
-        "    ELSE 'Stato dei controlli di qualità.'\n",
-        "  END\n",
-        "FROM\n",
-        "  latest\n",
+        "SELECT 'Qualità', quality_status,\n",
+        "  'Esito del refresh storico; non prova di freshness corrente.' FROM latest\n",
         "UNION ALL\n",
-        "SELECT\n",
-        "  'Dashboard',\n",
-        "  dashboard_label,\n",
-        "  CASE\n",
-        "    WHEN dashboard_label = 'Pronto' THEN 'Dataset della dashboard aggiornati.'\n",
-        "    ELSE 'Stato dei dataset della dashboard.'\n",
-        "  END\n",
-        "FROM\n",
-        "  latest\n",
+        "SELECT 'Dashboard', 'Snapshot storica',\n",
+        "  'Gold storico; date di origine separate dal publish della dashboard.' FROM latest\n",
         "UNION ALL\n",
-        "SELECT\n",
-        "  'Registro Modelli',\n",
-        "  registry_label,\n",
-        "  CASE\n",
-        "    WHEN\n",
-        "      registry_label = 'Differito'\n",
-        "    THEN\n",
-        "      'Registrazione differita per vincoli della piattaforma Serverless.'\n",
-        "    ELSE 'Stato della registrazione del modello.'\n",
-        "  END\n",
-        "FROM\n",
-        "  latest"
+        "SELECT 'Runtime ML target', 'FastAPI/sklearn',\n",
+        "  'Backend esterno da implementare; Spark conservato come riferimento.' FROM latest"
       ]
     },
     {
@@ -1198,7 +1144,7 @@
             "name": "subtitle_text",
             "multilineTextboxSpec": {
               "lines": [
-                "Affidabilità della rete, andamento dei ritardi e rischio previsto di disservizio a Roma."
+                "Analisi storiche della rete e replay predittivo Spark; non inference live."
               ]
             }
           },
@@ -1733,7 +1679,7 @@
             "multilineTextboxSpec": {
               "lines": [
                 "## Rischio Previsto sulla Rete\n",
-                "Stima del rischio basata sul modello per l'ultimo aggiornamento disponibile"
+                "Replay Spark del 2 ottobre 2026; non previsioni live."
               ]
             }
           },
@@ -4377,7 +4323,7 @@
             "name": "subtitle_text",
             "multilineTextboxSpec": {
               "lines": [
-                "Rischio di disservizio previsto più recente per linee, corse e fermate."
+                "Replay Spark storico del 2 ottobre 2026 per linee, corse e fermate."
               ]
             }
           },
@@ -5472,7 +5418,7 @@
             "name": "subtitle_text",
             "multilineTextboxSpec": {
               "lines": [
-                "Accuratezza finale del modello, risultati di validazione e stato del deployment."
+                "Risultati storici Spark/Persistence; target operativo futuro FastAPI/sklearn."
               ]
             }
           },
@@ -5810,7 +5756,7 @@
                 },
                 "description": {
                   "fields": [],
-                  "value": "Punteggi F1 stabili: 83,74% (Validazione) e 83,89% (Test). Le prestazioni di classificazione sono coerenti tra i set di dati."
+                  "value": "Metriche storiche di validation e TEST; non valutazione del futuro modello sklearn."
                 }
               },
               "version": 3,
@@ -6010,11 +5956,11 @@
             "name": "threshold_text",
             "multilineTextboxSpec": {
               "lines": [
-                "**Semantica:** Ritardo alla fermata successiva ≥ 5 min previsto con p > 45%; p = 45% resta negativo. Outcome: proxy futuro GTFS-RT.\n",
+                "**Soglia Spark storica:** p > 45%; p = 45% negativo. Evento next_stop_delay_ge_300s.\n",
                 "\n",
-                "**F1 soglia predefinita (0.50):** 83,74%  \n",
-                "**F1 soglia ottimizzata (0.45):** 83,89%  \n",
-                "**Guadagno dalla soglia:** +0,15 punti percentuali"
+                "**F1 validation (p > 0.50):** 83,74%  \n",
+                "**F1 validation (p > 0.45):** 83,89%  \n",
+                "**Nuovo modello sklearn:** soglia da rivalidare."
               ]
             }
           },
@@ -6113,9 +6059,9 @@
             "name": "persistence_text",
             "multilineTextboxSpec": {
               "lines": [
-                "**Modello di Riferimento (Persistence):** Usa il ritardo attuale come previsione del ritardo alla fermata successiva.\n",
+                "**Persistence storica:** ritardo attuale, fallback -71 s.\n",
                 "\n",
-                "Il modello di riferimento ha un RMSE di 489 secondi (~8 minuti) sui dati di test attuali."
+                "TEST storico: MAE 136,9818 s; RMSE 401,8525 s."
               ]
             }
           },
@@ -6156,10 +6102,10 @@
               "frame": {
                 "showDescription": true,
                 "showTitle": true,
-                "title": "Stato della Messa in Produzione",
+                "title": "Stato Architetturale",
                 "description": {
                   "fields": [],
-                  "value": "Stato della messa in produzione del modello e dell'infrastruttura di elaborazione predittiva."
+                  "value": "Spark: riferimento storico. FastAPI/sklearn: target operativo da implementare."
                 }
               },
               "version": 2,
