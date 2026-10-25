@@ -159,6 +159,8 @@ Le fasce di probabilità sono: Basso `p < 0.20`, Medio `0.20 <= p <= 0.45`, Alto
 
 `current_status` è lo stato GTFS del veicolo, non una fascia di severità del ritardo. `is_currently_delayed_flag` indica `current_arrival_delay_seconds > 60`: è una feature distinta dal target ML. Persistence mantiene il delay corrente, con fallback **−71 secondi** per NULL/NaN. Colonne tecniche, formule e risultati restano invariati.
 
+**PR3 - preparazione comune e input scoring corrente (solo repository):** 08 riusa `08_common_feature_preparation` mantenendo il percorso training e il contratto di 47 feature (42 numerical + 5 categorical). Il nuovo `08_current_scoring_dataset` prepara da Silver la staging `rome_transport.features.next_stop_delay_scoring`, senza label o ritardi futuri: osservazione corrente e fermata successiva restano identificativi distinti. Lo storico viene calcolato prima della selezione della snapshot; nessuna nuova imputazione o esecuzione di modelli. Scrittura runtime disabilitata di default, rollout separato ancora necessario. [Contratto, audit delle feature e rollout](docs/CURRENT_SCORING.md).
+
 ## Batch scoring e registrazione
 
 `rome_transport.ml.next_stop_delay_predictions` contiene l'ultima snapshot valutata: **17.177 righe**, **2.831** previsioni con flag positivo e quota di ritardo ≥ 5 min previsto **0.16481**, applicando il confronto stretto `probability > 0.45`.
