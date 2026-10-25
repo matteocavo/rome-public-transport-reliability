@@ -1,4 +1,7 @@
 # Databricks notebook source
+# MAGIC %md
+# MAGIC **Legacy exploration/bootstrap only.** Do not use this notebook as a scheduled ingestion writer. Notebook 05 owns the validated FULL_DATASET header, empty-snapshot and SOURCE/BATCH audit contract. See docs/INGESTION_AUDIT.md before deployment; this notebook does not implement that contract.
+
 # DBTITLE 1,GTFS-Realtime Feed Endpoints
 # MAGIC %md
 # MAGIC ## GTFS-Realtime Feed Endpoints

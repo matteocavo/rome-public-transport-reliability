@@ -39,6 +39,8 @@ Le tabelle Delta sono governate tramite Unity Catalog. La dashboard interroga es
 
 I feed ufficiali di Roma Servizi per la Mobilità forniscono linee, corse, fermate, orari, calendari e tracciati GTFS Static, oltre a Trip Updates, Vehicle Positions e Service Alerts GTFS-Realtime. Un Job Databricks acquisisce i feed **ogni 10 minuti** e conserva le snapshot in un archivio storico Delta. `rome_transport.bronze.ingestion_runs` registra stato ed errori; le esecuzioni successive proseguono dopo errori transitori dei feed.
 
+**PR2 — codice di ingestion robusto, non ancora distribuito:** il notebook 05 separa header e righe, conserva le snapshot FULL validamente vuote e registra esiti SOURCE e BATCH. I fallimenti di sorgente non impediscono gli altri tentativi, ma fanno fallire il task dopo la finalizzazione dell’audit. Anti-join null-safe e tentativi append-only supportano i retry; DIFFERENTIAL viene rifiutato. Il nuovo schema audit richiede una migrazione additiva approvata prima del deploy. Nessuna tabella o Job runtime è stato modificato. Dettagli e impatto del refresh alert in [INGESTION_AUDIT.md](docs/INGESTION_AUDIT.md).
+
 I file GTFS Static di riferimento rimangono localmente in `data/reference/gtfs_static/` e sono ignorati da Git per le loro dimensioni. Durante l'esecuzione, l'ingestion statica utilizza percorsi dei volumi Unity Catalog in Databricks.
 
 ## Pipeline e sequenza dei notebook

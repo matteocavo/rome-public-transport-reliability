@@ -33,6 +33,11 @@ def require_columns(df, required, label):
     if missing:
         raise ValueError(f"{label}: missing required columns {missing}")
 
+def assert_no_rows(df, condition, message):
+    if df.filter(condition).limit(1).count():
+        raise ValueError(message)
+
+
 def n_where(condition):
     return F.coalesce(F.sum(F.when(condition, 1).otherwise(0)), F.lit(0))
 
@@ -358,9 +363,40 @@ def align_alert_snapshots(observation_times, alert_times):
     ).select(F.col("timeline_timestamp").alias("feed_timestamp"), "matched_alert_feed_timestamp")
     return observation_times.join(timeline, "feed_timestamp", "left")
 
+def successful_empty_full_alert_snapshot_times(audit):
+    successful_full = audit.filter(
+        (F.col("record_type") == "SOURCE") & (F.col("source_name") == "service_alerts")
+        & (F.col("status") == "SUCCESS") & (F.col("feed_incrementality") == "FULL_DATASET")
+        & F.col("feed_timestamp").isNotNull())
+    assert_no_rows(successful_full,
+        F.col("is_empty").isNull() | F.col("parsed_row_count").isNull()
+        | (F.col("is_empty") & (F.col("parsed_row_count") != 0)),
+        "Invalid successful alert snapshot evidence")
+    # Only empty evidence needs the audit timeline. A nonempty audit newer than
+    # the pinned alert table must not be mistaken for zero alerts in this run.
+    return successful_full.filter(F.col("is_empty")).select("feed_timestamp").distinct()
+
+
+# Historical alert rows remain the legacy baseline. New successful FULL_DATASET audit
+# records also represent zero-alert snapshots, which have no service_alerts rows.
+alert_snapshot_times = service_alerts.select("feed_timestamp").distinct()
+AUDIT_TABLE = "rome_transport.bronze.ingestion_runs"
+if spark.catalog.tableExists(AUDIT_TABLE):
+    audit_columns = set(spark.table(AUDIT_TABLE).columns)
+    new_contract = {"record_type", "feed_incrementality", "is_empty", "parsed_row_count"}
+    if new_contract & audit_columns:
+        require_columns(spark.table(AUDIT_TABLE), list(new_contract)
+                        + ["source_name", "status", "feed_timestamp"], "Ingestion audit")
+        audit_version = SOURCE_VERSION_OVERRIDES.get("ingestion_runs")
+        if audit_version is None:
+            audit_version = int(spark.sql(f"DESCRIBE HISTORY {AUDIT_TABLE} LIMIT 1").first()["version"])
+        source_versions["ingestion_runs"] = int(audit_version)
+        audit = spark.read.option("versionAsOf", int(audit_version)).table(AUDIT_TABLE)
+        alert_snapshot_times = alert_snapshot_times.unionByName(
+            successful_empty_full_alert_snapshot_times(audit)).distinct()
+
 snapshot_alignment = align_alert_snapshots(
-    realtime_observations.select("feed_timestamp").distinct(),
-    service_alerts.select("feed_timestamp").distinct(),
+    realtime_observations.select("feed_timestamp").distinct(), alert_snapshot_times,
 )
 observations_with_snapshot = (
     scheduled_observations.join(snapshot_alignment, "feed_timestamp", "left")
@@ -510,6 +546,23 @@ expected_alignment = spark.createDataFrame(
 assert alignment_fixture.join(expected_alignment, "feed_timestamp").filter(
     ~F.col("matched_alert_feed_timestamp").eqNullSafe(F.col("expected"))
 ).count() == 0
+# A full empty snapshot at 20 must supersede the alert-bearing snapshot at 10.
+empty_alert_audit = spark.createDataFrame([
+    ("SOURCE", "service_alerts", "SUCCESS", "FULL_DATASET", 10, False, 1),
+    ("SOURCE", "service_alerts", "SUCCESS", "FULL_DATASET", 20, True, 0),
+    ("SOURCE", "service_alerts", "FAILED", "FULL_DATASET", 30, True, 0),
+    ("SOURCE", "service_alerts", "SUCCESS", "DIFFERENTIAL", 40, True, 0)],
+    "record_type STRING, source_name STRING, status STRING, feed_incrementality STRING, "
+    "feed_timestamp LONG, is_empty BOOLEAN, parsed_row_count LONG")
+empty_alignment = align_alert_snapshots(
+    spark.createDataFrame([(5,), (15,), (25,), (45,)], "feed_timestamp LONG"),
+    spark.createDataFrame([(10,)], "feed_timestamp LONG").unionByName(
+        successful_empty_full_alert_snapshot_times(empty_alert_audit)))
+expected_empty_alignment = spark.createDataFrame(
+    [(5, None), (15, 10), (25, 20), (45, 20)], "feed_timestamp LONG, expected LONG")
+assert_no_rows(empty_alignment.join(expected_empty_alignment, "feed_timestamp"),
+    ~F.col("matched_alert_feed_timestamp").eqNullSafe(F.col("expected")),
+    "Empty full snapshot did not supersede prior alert state")
 print("Transformation edge checks passed")
 
 
@@ -637,6 +690,6 @@ saved_output.orderBy(*OBS_KEY).select(
 
 # MAGIC %md
 # MAGIC ## Assumptions and Operational Limits
-# MAGIC Alert history is assumed to contain full snapshots: the supplied Bronze table cannot represent empty snapshots, ingestion outages or deleted-entity markers, so the latest recorded snapshot may be stale and feed-time alignment does not establish ingestion-time availability.
+# MAGIC Legacy alert rows retain their historical full-snapshot assumption. After the reviewed audit migration and notebook 05 deployment, successful FULL_DATASET audit records add explicit empty-snapshot evidence. DIFFERENTIAL is rejected upstream. Legacy empty snapshots cannot be reconstructed; the latest evidence may still be stale and feed-time alignment does not establish ingestion-time availability.
 # MAGIC Static schedules are not versioned by service validity in the existing Silver schema, and upstream nearest-time vehicle matching can include future positions; the coverage and timing diagnostics must therefore be reviewed before later ML use.
 # MAGIC Europe/Rome midnight arithmetic follows the requested rule and preserves GTFS seconds, with transition-day rows explicitly exposed for review; an unavailable alert snapshot means unknown coverage even when the matched-alert count is zero.
