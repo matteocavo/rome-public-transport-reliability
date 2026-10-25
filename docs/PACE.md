@@ -533,7 +533,7 @@ Le transizioni usano le fasce −60/180/300 secondi della sezione 14; “Ritardo
 
 ---
 
-**PR3 - preparazione comune e input scoring corrente (solo repository):** 08 riusa `08_common_feature_preparation` mantenendo il percorso training e il contratto di 47 feature (42 numerical + 5 categorical). Il nuovo `08_current_scoring_dataset` prepara da Silver la staging `rome_transport.features.next_stop_delay_scoring`, senza label o ritardi futuri: osservazione corrente e fermata successiva restano identificativi distinti. Lo storico viene calcolato prima della selezione della snapshot; nessuna nuova imputazione o esecuzione di modelli. Scrittura runtime disabilitata di default, rollout separato ancora necessario. [Contratto, audit delle feature e rollout](CURRENT_SCORING.md).
+**PR3 - rollout runtime validato il 25 ottobre 2026:** helper e notebook 08/scoring distribuiti dal merge `c343f1e`. Parità Spark old/new PASS su scope deterministico; staging `rome_transport.features.next_stop_delay_scoring` creata in Delta v0 con 24.797 righe e contratto invariato (42 numerical + 5 categorical). Nessun training o scoring modello eseguito. La sorgente è Silver v8, ultima snapshot del 2 ottobre: staging dell’ultimo input disponibile, non feed corrente fresco. Overwrite controllato, gate di default ancora disabilitato, nessuna prediction history. [Evidenze runtime, missingness e limiti](CURRENT_SCORING.md).
 
 # 25. FEATURE ENGINEERING
 
