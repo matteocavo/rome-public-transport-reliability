@@ -1,6 +1,6 @@
 # Common features and current scoring input (PR3)
 
-Repository implementation only: no PR3 notebook or staging table has been deployed or executed in Databricks. Existing MLflow runs, models, predictions, Gold and dashboard outputs are unchanged. Notebook 12 remains the historical refit/replay workflow; scoring-only artifacts belong to PR4.
+PR3 was deployed and validated in a separately authorized controlled rollout on 25 October 2026 from main `c343f1e8420a801bab98d22f298c939f4b8c0ae0`. Shared preparation passed Spark old/new parity; current input staging was created once and read back exactly. Existing MLflow runs, models, predictions, Gold and dashboard outputs are unchanged. Notebook 12 remains the historical refit/replay workflow; scoring-only artifacts belong to PR4. **The latest available Silver input is from 2 October, not a fresh live feed.**
 
 ## Architecture and selection
 
@@ -94,14 +94,126 @@ This is current scoring input/staging, not prediction history. Validated, nonemp
 
 The writer validates before overwrite and reads back count/schema/key consistency. This is not a transaction across source, staging and future predictions. Concurrent preparation writers are not supported; coordinate a single authorized run. No prediction history is introduced.
 
-## Validation and controlled rollout still required
+## Validation scope and rollout procedure
 
 Local tests execute the production definitions and a pinned copy of pre-refactor 08 expressions on small deterministic frames. They compare all training-preparation values, types and row counts, check the original eligibility filter, and independently check known historical/lag results. Additional tests cover exact contract/order/hash, current-versus-next identifiers, NULL next-delay eligibility, absence of labels/outcomes from staging, future-row exclusion, schema failures and causal guards. The test evaluator is intentionally limited to these expressions; it is not Spark or a replacement for Spark/Delta integration. Fixture epochs use Rome's January UTC+1 offset and do not validate daylight-saving behavior. No Spark/Java dependency was installed.
 
-After merge, with separate runtime authorization:
+The following procedure was followed during the authorized rollout. Keep these steps for future redeployments; no new runtime authorization is implied:
 
 1. Record source/output versions and back up runtime notebook 08. Deploy the shared definitions notebook alongside both callers; its workspace name must be `08_common_feature_preparation` for relative `%run` to resolve. Do not execute 09–12.
 2. Read a pinned Silver version and compare old/new 08 preparation in memory on the same deterministic set of complete trip snapshots and past history. Compare all original output columns, types, counts and keys before any training feature overwrite. Do not trim history before deriving historical inputs. No unexplained difference is acceptable.
 3. Execute current preparation with staging writes disabled; verify the exact 47-feature order/hash, source epoch/version, row eligibility, missingness and current/next-stop identities. Require only known identifiers, not future delays or outcomes.
 4. If approved, enable the staging gate and create/overwrite only `rome_transport.features.next_stop_delay_scoring`. Verify Delta schema, counts, keys, no future/outcome columns and lineage. Keep the old staging version if replacing an existing table.
 5. Do not execute training, scoring, registration, Gold or dashboards. Do not wire a new Job/schedule in this PR. The existing notebook 12 still represents historical labeled replay; PR4 will provide the scoring-only artifact.
+
+
+## Controlled runtime validation results
+
+### Deployed notebooks and source baseline
+
+The runtime directory is `/Workspace/Users/matteo.cavo.data@gmail.com/Rome Public Transport Reliability & Delay Prediction/notebooks`. All three deployed sources were re-exported and matched main exactly, including the default disabled staging gate. The original runtime 08 was exported before replacement; its executable AST matched the pre-PR3 main baseline. Runtime 09–12 had only comment differences from main and were preserved byte-for-byte. They were not executed.
+
+| Notebook | Object ID | Action |
+| --- | --- | --- |
+| `08_common_feature_preparation` | 3410520310963567 | Created from main; relative `%run` verified in real Spark |
+| `08_feature_engineering` | 212980067827078 | Updated from main; full writing notebook not executed |
+| `08_current_scoring_dataset` | 3410520310963568 | Created from main; actual body validated with writes disabled and pinned Silver |
+
+One temporary validation notebook ran two unscheduled feature-only executions and was deleted after success. Its source, original 08 export, object/update metadata and structured reports were retained in the local operator evidence bundle. No production Job or schedule was modified.
+
+Pinned source: `rome_transport.silver.realtime_enriched_observations` **v8**, 15,402,700 rows; feed range **1790334480–1790928849**, service dates **2026-09-25–2026-10-02**. Silver remained v8, historical features remained v8 and labeled remained v12 before/after. No feature or label table was overwritten.
+
+### Old/new training preparation parity
+
+[Read-only validation run 84499547661340](https://dbc-53d4ca74-894f.cloud.databricks.com/?o=7474647743124164#job/1102798544820869/run/84499547661340) completed with validation PASS. The legacy expressions came from the actual exported runtime 08; the new helper and actual main training adapter were executed only in memory.
+
+The deterministic scope used routes **719, 314 and 46**, retaining **504,787 history observations across 919 epochs**. Comparisons used epochs **1790334480, 1790630629, 1790927629 and 1790928849**. After the original training eligibility filter: **2,648 old rows = 2,648 new rows**, **105 projected columns**, identical Spark schemas including metadata/nullability and **zero EXCEPT ALL differences in either direction**. This included keys, feature values and provisional audit fields.
+
+Compared epochs covered 76 trips and 63 vehicles, with 1,086 observations missing a vehicle position, 1,675 with one, 31 NULL current delays, 2,185 known alert snapshots and 576 unknown alert snapshots. No sparse next-stop sequence appeared in this particular parity scope; the separate current-snapshot check below found 55 real sparse transitions. The parity result is representative scoped validation, not an exhaustive comparison of the entire historical feature table.
+
+Historical provenance guards passed in Spark. Independent strict-past joins on 20 deterministic real rows checked route, stop, route-stop and route-hour histories: counts matched exactly and means matched within 1e-9. Every contributing maximum epoch was strictly earlier than the current epoch; same-epoch peers were excluded. The full scoring preparation also passed common causality validation on its pinned source context.
+
+### Current input staging and persistence
+
+The actual scoring notebook body ran against pinned Silver v8 with `ALLOW_STAGING_OVERWRITE=False`; it raised only the expected disabled-write gate after validation. Following acceptance of all read-only results, [write/read-back run 1103286384923896](https://dbc-53d4ca74-894f.cloud.databricks.com/?o=7474647743124164#job/1048168698800201/run/1103286384923896) explicitly enabled the gate in the isolated execution and made one controlled write. The deployed notebook default remains False.
+
+The staging did not exist before rollout. It now contains **24,797 rows**, **300 routes**, **1,313 trips**, **1,312 vehicles** and **6,740 observation stops**, all at epoch **1790928849**. An independent SQL window check reproduced the eligibility count, including **236 rows whose next represented stop had no arrival-delay estimate** and **55 sparse sequence transitions**. Thus no next-stop delay or future outcome was required.
+
+Grain duplicates: **0**. Invalid target ordering: **0**. Current observation IDs, next-stop IDs and physical vehicle state were inspected separately. For example, an observation at sequence 9 targeted sequence 10 while the physical vehicle remained at sequence 8; these identities were not conflated. Repeated stop IDs are still governed by increasing sequences rather than an invalid blanket stop-ID inequality.
+
+The raw model order, names and compatible Spark types passed: **47 = 42 numerical + 5 categorical**, with the original hash unchanged. `trip_progress_ratio`, delay targets, label/provisional outcomes, future columns and prediction outputs are absent from the persisted staging. Only the five documented target identity fields are present as metadata.
+
+Staging Delta version: **0**, operation **CREATE OR REPLACE TABLE AS SELECT**, **24,797 output rows**. The prepared DataFrame and read-back had identical column order/names/types and counts, with **zero full-row EXCEPT ALL differences in either direction**. Delta relaxed nullable metadata on five missingness indicators and four lineage fields; this storage-level relaxation was recorded explicitly rather than treated as a value/schema-type change. Required identities and lineage values were separately checked.
+
+Persisted lineage:
+
+- `source_silver_version`: **8**
+- `feature_preparation_batch_id`: **dd58c7ab-88f8-46f9-80fd-d07b9db8feae**
+- `feature_prepared_at`: **2026-10-25T17:49:47.563874Z**
+- `feature_contract_hash`: **11682b3cc1ab5c1d8440af4f6294e932e815126c3dd86ab609f4d5f8f35c41a5**
+
+The post-write SQL checks confirmed one source version, one hash and one preparation batch, the single feed epoch, zero duplicate keys and valid target ordering. Staging is overwrite-only current input, not an append history, predictions or evaluation table.
+
+### Missingness and timezone
+
+All 47 inputs were profiled before and after persistence. Profiles matched exactly. There were **zero NaN and infinity values**, and **no completely NULL/unusable model feature**. High NULL rates are explicit limitations of the available input, not newly imputed values. Nullable categories remain for the frozen indexer's invalid-value handling.
+
+| Raw feature | NULL rows | NULL % |
+| --- | ---: | ---: |
+| `feed_hour` | 0 | 0.00000 |
+| `feed_minute` | 0 | 0.00000 |
+| `day_of_week` | 0 | 0.00000 |
+| `is_weekend` | 0 | 0.00000 |
+| `minutes_since_midnight` | 0 | 0.00000 |
+| `current_arrival_delay_seconds` | 467 | 1.88329 |
+| `current_departure_delay_seconds` | 18,688 | 75.36396 |
+| `abs_current_delay_seconds` | 467 | 1.88329 |
+| `is_currently_delayed_flag` | 467 | 1.88329 |
+| `is_currently_early_flag` | 467 | 1.88329 |
+| `lag_1_arrival_delay_seconds` | 1,779 | 7.17425 |
+| `lag_2_arrival_delay_seconds` | 3,055 | 12.32004 |
+| `lag_3_arrival_delay_seconds` | 4,299 | 17.33677 |
+| `rolling_mean_delay_last_3_stops` | 414 | 1.66956 |
+| `rolling_max_delay_last_3_stops` | 414 | 1.66956 |
+| `rolling_std_delay_last_3_stops` | 1,732 | 6.98472 |
+| `delay_change_from_previous_stop` | 1,832 | 7.38799 |
+| `delay_acceleration` | 3,155 | 12.72331 |
+| `scheduled_seconds_to_next_stop` | 18,756 | 75.63818 |
+| `distance_to_next_stop_meters` | 18,756 | 75.63818 |
+| `vehicle_speed` | 19,311 | 77.87636 |
+| `vehicle_bearing` | 19,580 | 78.96116 |
+| `vehicle_odometer` | 2,587 | 10.43271 |
+| `current_stop_sequence` | 24 | 0.09679 |
+| `vehicle_position_staleness_seconds` | 24 | 0.09679 |
+| `vehicle_position_available_flag` | 0 | 0.00000 |
+| `active_alert_flag` | 0 | 0.00000 |
+| `active_alert_count` | 0 | 0.00000 |
+| `active_detour_flag` | 0 | 0.00000 |
+| `active_construction_flag` | 0 | 0.00000 |
+| `historical_route_mean_delay` | 0 | 0.00000 |
+| `historical_stop_mean_delay` | 1 | 0.00403 |
+| `historical_route_stop_mean_delay` | 2 | 0.00807 |
+| `historical_route_hour_mean_delay` | 0 | 0.00000 |
+| `historical_route_observation_count` | 0 | 0.00000 |
+| `historical_stop_observation_count` | 0 | 0.00000 |
+| `missing_vehicle_position` | 0 | 0.00000 |
+| `missing_current_arrival_delay` | 0 | 0.00000 |
+| `missing_current_departure_delay` | 0 | 0.00000 |
+| `missing_historical_route_delay` | 0 | 0.00000 |
+| `missing_historical_stop_delay` | 0 | 0.00000 |
+| `missing_alert_snapshot` | 0 | 0.00000 |
+| `route_id` | 0 | 0.00000 |
+| `route_type` | 18,751 | 75.61802 |
+| `direction_id` | 0 | 0.00000 |
+| `agency_id` | 18,751 | 75.61802 |
+| `current_status` | 24 | 0.09679 |
+
+Notable limitations: departure delay is about 75.36% NULL; schedule interval/distance about 75.64%; speed/bearing about 77.88%/78.96%; route_type/agency_id about 75.62%. These are compatible nullable inputs for the frozen preprocessing, but this rollout does not establish model quality under that missingness pattern.
+
+Spark session timezone was explicitly **Europe/Rome**. Real rows at epoch 1790928849 matched Python timezone conversion: **2026-10-02T10:14:09+02:00**, feed_hour=10, feed_minute=14, minutes_since_midnight=614, day_of_week=6 (Friday), is_weekend=0. This is a nonambiguous date before the DST transition. The previous session timezone **Etc/UTC** was restored in both isolated runs; no permanent timezone setting changed.
+
+### Boundaries, rollback and readiness
+
+No rollback was needed. The original runtime 08 source and update metadata remain available in the evidence bundle; helper/scoring were new objects. The staging was new, with no prior version to restore. A future rollback must preserve evidence and avoid touching Silver or historical feature/label tables; no automatic DROP or RESTORE was performed.
+
+No model was loaded, fitted or transformed. No MLflow run or registration was created/modified, and notebooks 09–13 were not run. Gold, dashboards, Power BI, ingestion settings and the app repository were untouched. PR4 implementation can proceed against the validated input contract, with source freshness and high missingness remaining explicit limitations. This result does not claim current operational service or prediction quality.
