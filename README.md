@@ -161,6 +161,8 @@ Le fasce di probabilità sono: Basso `p < 0.20`, Medio `0.20 <= p <= 0.45`, Alto
 
 **PR3 - rollout runtime validato il 25 ottobre 2026:** helper e notebook 08/scoring distribuiti dal merge `c343f1e`. Parità Spark old/new PASS su scope deterministico; staging `rome_transport.features.next_stop_delay_scoring` creata in Delta v0 con 24.797 righe e contratto invariato (42 numerical + 5 categorical). Nessun training o scoring modello eseguito. La sorgente è Silver v8, ultima snapshot del 2 ottobre: staging dell’ultimo input disponibile, non feed corrente fresco. Overwrite controllato, gate di default ancora disabilitato, nessuna prediction history. [Evidenze runtime, missingness e limiti](docs/CURRENT_SCORING.md).
 
+**PR4 - pipeline persistita e inference separata (solo repository):** nuovi percorsi `12a_fit_persist_final_classifier` e `12b_score_current_input`, con helper condiviso, artifact MLflow Spark completo e caricamento obbligatoriamente verificato. Inference solo tramite `transform()`, senza refit o lettura del labeled dataset. Contratto 47 feature, RF e soglia stretta >0.45 invariati; gate runtime OFF, UC registration opzionale e nessuna scrittura prediction. Persistenza/load reali richiedono rollout autorizzato; la sorgente scoring resta storica perché Silver è stale. [Artifact, metadata, metriche e rollout](docs/MODEL_SERVING.md).
+
 ## Batch scoring e registrazione
 
 `rome_transport.ml.next_stop_delay_predictions` contiene l'ultima snapshot valutata: **17.177 righe**, **2.831** previsioni con flag positivo e quota di ritardo ≥ 5 min previsto **0.16481**, applicando il confronto stretto `probability > 0.45`.

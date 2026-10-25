@@ -960,6 +960,8 @@ xgboost_v1
 
 ---
 
+**PR4 - pipeline persistita e inference separata (solo repository):** nuovi percorsi `12a_fit_persist_final_classifier` e `12b_score_current_input`, con helper condiviso, artifact MLflow Spark completo e caricamento obbligatoriamente verificato. Inference solo tramite `transform()`, senza refit o lettura del labeled dataset. Contratto 47 feature, RF e soglia stretta >0.45 invariati; gate runtime OFF, UC registration opzionale e nessuna scrittura prediction. Persistenza/load reali richiedono rollout autorizzato; la sorgente scoring resta storica perché Silver è stale. [Artifact, metadata, metriche e rollout](MODEL_SERVING.md).
+
 # 40. REGISTRAZIONE DEL MODELLO
 
 Il notebook 12 ha tentato la registrazione, che **non è stata completata**. L'attuale ambiente Databricks Serverless SparkML / Unity Catalog limita la serializzazione degli artefatti. Lo stato è `DEFERRED_SERVERLESS_LIMITATION`.
