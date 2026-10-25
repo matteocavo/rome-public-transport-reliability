@@ -289,6 +289,8 @@ La frequenza implementata è **ogni 10 minuti**, tramite un Job Databricks. La p
 
 ---
 
+**PR2 — codice di ingestion robusto, non ancora distribuito:** il notebook 05 separa header e righe, conserva le snapshot FULL validamente vuote e registra esiti SOURCE e BATCH. I fallimenti di sorgente non impediscono gli altri tentativi, ma fanno fallire il task dopo la finalizzazione dell’audit. Anti-join null-safe e tentativi append-only supportano i retry; DIFFERENTIAL viene rifiutato. Il nuovo schema audit richiede una migrazione additiva approvata prima del deploy. Nessuna tabella o Job runtime è stato modificato. Dettagli e impatto del refresh alert in [INGESTION_AUDIT.md](INGESTION_AUDIT.md).
+
 # 12. CONSERVAZIONE E TRACCIABILITÀ
 
 La progettazione iniziale dell'audit prevedeva i seguenti campi; i notebook di ingestion definiscono quelli effettivamente implementati:
