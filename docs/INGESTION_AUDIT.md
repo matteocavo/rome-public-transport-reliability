@@ -16,7 +16,7 @@ Zero parsed rows with nonzero entities is not labeled an empty feed. A TripUpdat
 
 NETWORK_ERROR, HTTP_ERROR, INCOMPLETE_READ, DECODE_ERROR, PARSE_ERROR, INVALID_FEED_METADATA, WRITE_ERROR and UNKNOWN_ERROR are stable categories. Original error_message is retained. Metadata known before failure remains available; unknown parsed/duplicate counts are NULL. The legacy non-null rows_appended=0 on a failure is not proof that a timed-out write could not commit.
 
-## Additive audit migration â€” applied during the authorized rollout
+## Additive audit migration - applied during the authorized rollout
 
 Existing table: rome_transport.bronze.ingestion_runs. Preserve its seven existing columns:
 run_timestamp TIMESTAMP, source_name STRING, feed_timestamp BIGINT, entities_received BIGINT, rows_appended BIGINT, status STRING, error_message STRING.
