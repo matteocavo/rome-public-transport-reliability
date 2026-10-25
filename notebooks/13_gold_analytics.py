@@ -10,6 +10,9 @@
 # MAGIC
 # MAGIC Prediction flags remain **strictly probability > 0.45**. Historical labels never enter predictive operations. Frozen notebook 11 TEST metrics remain reference results, not estimates from refit or serving data. Source Delta versions are pinned once. The refresh manifest is published last, after all persisted Gold outputs pass validation.
 
+# MAGIC
+# MAGIC Canonical event next_stop_delay_ge_300s is displayed as Ritardo >= 5 min. Historical labels are future GTFS-RT proxies; major_delay fields retain their technical names. risk_band is probability context, current_status is GTFS vehicle state, and neither is a delay-severity label.
+
 # COMMAND ----------
 
 from datetime import datetime, timezone

@@ -3,6 +3,9 @@
 # MAGIC # Model Tuning and Final Selection
 # MAGIC Focus manual tuning on validation performance while preserving notebook 10's realized targets, feature contract and purged temporal split. Freeze both model choices and the classification threshold before evaluating only the selected solutions on test.
 
+# MAGIC
+# MAGIC Canonical display: Ritardo >= 5 min for next_stop_delay_ge_300s. Future labels are GTFS-RT proxies. The final frozen deployment rule is strict p>0.45 (p=0.45 negative); selection logic below is unchanged.
+
 # COMMAND ----------
 
 # MAGIC %md
