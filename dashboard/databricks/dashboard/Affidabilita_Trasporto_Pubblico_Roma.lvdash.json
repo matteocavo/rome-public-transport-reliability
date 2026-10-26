@@ -3678,9 +3678,9 @@
                     "type": "number-percent"
                   },
                   "axis": {
-                    "title": "Tasso di Ritardi ≥ 5 min"
+                    "title": "Quota delle Transizioni"
                   },
-                  "displayName": "Tasso di Ritardi ≥ 5 min",
+                  "displayName": "Quota delle Transizioni",
                   "scale": {
                     "type": "quantitative"
                   }
@@ -3729,7 +3729,7 @@
                 },
                 "color": {
                   "fieldName": "max(Major Delay Rate)",
-                  "displayName": "Tasso di Ritardi ≥ 5 min",
+                  "displayName": "Quota delle Transizioni",
                   "scale": {
                     "colorRamp": {
                       "colors": {
