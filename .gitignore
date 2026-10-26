@@ -65,3 +65,19 @@ temp/
 **/.pbi/cache.abf
 
 # Dashboard JSON exports, PDFs and portfolio images are intentionally not ignored.
+
+
+# Security: local credentials, runtime exports, models and logs
+token.json
+token.txt
+*.p12
+*.pfx
+*.jks
+data_exports/
+*.csv
+*.arrow
+*.joblib
+*.pickle
+*.pkl
+/artifacts/*
+!/artifacts/.gitkeep
