@@ -64,9 +64,7 @@ def forbidden_path(name: str) -> bool:
         return True
     if p.parts and p.parts[0] == "artifacts" and name != "artifacts/.gitkeep":
         return True
-    if name.startswith("data/reference/gtfs_static/") or name.startswith(
-        ("data/raw/", "data/generated/")
-    ):
+    if name.startswith(("data/reference/gtfs_static/", "data/raw/", "data/generated/")):
         return True
     return p.name.endswith("~")
 
