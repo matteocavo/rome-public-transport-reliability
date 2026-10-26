@@ -19,6 +19,16 @@ from pyspark.sql.window import Window
 
 spark.conf.set("spark.sql.session.timeZone", "Europe/Rome")
 OUTPUT_TABLE = "rome_transport.silver.realtime_enriched_observations"
+ALLOW_ENRICHMENT_OVERWRITE = False
+ALLOW_INVALID_ALERT_SNAPSHOT_ISOLATION = False
+try:
+    ALLOW_ENRICHMENT_OVERWRITE = dbutils.widgets.get("allow_enrichment_overwrite").lower() == "true"
+except Exception:
+    pass
+try:
+    ALLOW_INVALID_ALERT_SNAPSHOT_ISOLATION = dbutils.widgets.get("allow_invalid_alert_snapshot_isolation").lower() == "true"
+except Exception:
+    pass
 OBS_KEY = ["feed_timestamp", "entity_id", "trip_id", "stop_sequence", "stop_id"]
 SCHEDULE_KEY = ["trip_id", "stop_sequence", "stop_id"]
 SOURCE_TABLES = {
@@ -192,6 +202,16 @@ scheduled_observations = r.join(s, schedule_condition, "left").select(
     F.col("s.direction_id").alias("scheduled_direction_id"),
     F.coalesce(F.col("s._schedule_match"), F.lit(False)).alias("schedule_match_flag"),
 )
+scheduled_observations = scheduled_observations.withColumn("schedule_metadata_conflict_flag",
+    F.coalesce(F.col("route_id") != F.col("scheduled_route_id"), F.lit(False))
+    | F.coalesce(F.col("direction_id") != F.col("scheduled_direction_id"), F.lit(False)))
+# Trip IDs can be reused by the provider. Preserve raw identity and conflicting IDs for audit,
+# but do not attach another route/direction's schedule attributes to operational features.
+for name in schedule_metadata:
+    scheduled_observations = scheduled_observations.withColumn(name,
+        F.when(~F.col("schedule_metadata_conflict_flag"), F.col(name)))
+scheduled_observations = scheduled_observations.withColumn("schedule_match_flag",
+    F.col("schedule_match_flag") & ~F.col("schedule_metadata_conflict_flag"))
 require_same_count(scheduled_observations, source_count, "Schedule LEFT JOIN")
 
 
@@ -281,12 +301,21 @@ alerts = unique_dimension(
 )
 if alerts.filter(F.col("alert_id").isNull() | F.col("feed_timestamp").isNull()).limit(1).count():
     raise ValueError("Alert ID and feed timestamp cannot be null")
-if alerts.filter(F.exists(
+invalid_alert_periods = alerts.filter(F.exists(
     "active_periods", lambda p: p.isNull() | (
         p["start"].isNotNull() & p["end"].isNotNull() & (p["end"] <= p["start"])
     )
-)).limit(1).count():
-    raise ValueError("Malformed alert active periods; inspect Bronze without modifying it")
+))
+invalid_alert_snapshot_times = invalid_alert_periods.select("feed_timestamp").distinct()
+invalid_alert_period_row_count = invalid_alert_periods.count()
+invalid_alert_snapshot_count = invalid_alert_snapshot_times.count()
+if invalid_alert_period_row_count and not ALLOW_INVALID_ALERT_SNAPSHOT_ISOLATION:
+    raise ValueError("Malformed alert active periods; explicit snapshot isolation required; Bronze unchanged")
+# Reject the entire affected FULL snapshot as unknown context, never as confirmed zero alerts.
+# Keep its timestamp in the RAW timeline below: do not fall back to an older alert snapshot.
+alerts = alerts.join(invalid_alert_snapshot_times, "feed_timestamp", "left_anti")
+print({"invalid_alert_period_rows": invalid_alert_period_row_count,
+       "isolated_alert_snapshots": invalid_alert_snapshot_count})
 
 open_period = F.array(F.struct(
     F.lit(None).cast("timestamp").alias("active_start"),
@@ -377,6 +406,16 @@ def successful_empty_full_alert_snapshot_times(audit):
     return successful_full.filter(F.col("is_empty")).select("feed_timestamp").distinct()
 
 
+def isolate_invalid_alert_matches(alignment, invalid_times):
+    rejected = invalid_times.select(F.col("feed_timestamp").alias("_rejected_alert_timestamp"))
+    return (alignment.join(rejected,
+        F.col("matched_alert_feed_timestamp") == F.col("_rejected_alert_timestamp"), "left")
+        .withColumn("alert_snapshot_rejected_flag", F.col("_rejected_alert_timestamp").isNotNull())
+        .withColumn("matched_alert_feed_timestamp", F.when(~F.col("alert_snapshot_rejected_flag"),
+            F.col("matched_alert_feed_timestamp")))
+        .drop("_rejected_alert_timestamp"))
+
+
 # Historical alert rows remain the legacy baseline. New successful FULL_DATASET audit
 # records also represent zero-alert snapshots, which have no service_alerts rows.
 alert_snapshot_times = service_alerts.select("feed_timestamp").distinct()
@@ -398,6 +437,7 @@ if spark.catalog.tableExists(AUDIT_TABLE):
 snapshot_alignment = align_alert_snapshots(
     realtime_observations.select("feed_timestamp").distinct(), alert_snapshot_times,
 )
+snapshot_alignment = isolate_invalid_alert_matches(snapshot_alignment, invalid_alert_snapshot_times)
 observations_with_snapshot = (
     scheduled_observations.join(snapshot_alignment, "feed_timestamp", "left")
     .withColumn("alert_snapshot_available_flag", F.col("matched_alert_feed_timestamp").isNotNull())
@@ -565,13 +605,25 @@ assert_no_rows(empty_alignment.join(expected_empty_alignment, "feed_timestamp"),
     "Empty full snapshot did not supersede prior alert state")
 print("Transformation edge checks passed")
 
+# A rejected latest snapshot is unknown, not an older fallback or a successful empty feed.
+isolation_fixture = spark.createDataFrame([(25, 20), (35, 30)],
+    "feed_timestamp LONG, matched_alert_feed_timestamp LONG")
+isolation_bad_times = spark.createDataFrame([(20,)], "feed_timestamp LONG")
+isolated_fixture = isolate_invalid_alert_matches(isolation_fixture, isolation_bad_times)
+assert_no_rows(isolated_fixture, (F.col("feed_timestamp") == 25)
+    & (F.col("matched_alert_feed_timestamp").isNotNull() | ~F.col("alert_snapshot_rejected_flag")),
+    "Malformed snapshot was not isolated as unknown")
+assert_no_rows(isolated_fixture, (F.col("feed_timestamp") == 35)
+    & (~F.col("matched_alert_feed_timestamp").eqNullSafe(F.lit(30)) | F.col("alert_snapshot_rejected_flag")),
+    "Valid snapshot changed during isolation")
+
 
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC ## Data Quality Validation
 # MAGIC Summarize completeness, schedule coverage, alert and vehicle-position coverage, and absolute delay consistency differences before writing.
-# MAGIC Additional diagnostics expose future vehicle positions inherited from notebook 06, calendar gaps, schedule identifier mismatches and daylight-saving service dates without altering feed values.
+# MAGIC Additional diagnostics check vehicle timing, calendar gaps, isolated static metadata conflicts and daylight-saving service dates without altering feed values.
 
 # COMMAND ----------
 
@@ -581,6 +633,7 @@ quality_summary = enriched_observations.agg(
     F.countDistinct("trip_id").alias("distinct_trips"),
     F.countDistinct("vehicle_id").alias("distinct_vehicles"),
     n_where(~F.col("schedule_match_flag")).alias("null_schedule_matches"),
+    n_where(F.col("schedule_metadata_conflict_flag")).alias("rows_with_masked_schedule_conflict"),
     n_where(F.col("stop_name").isNull() | F.col("stop_lat").isNull()
             | F.col("stop_lon").isNull()).alias("null_stop_metadata"),
     n_where(F.col("route_short_name").isNull() | F.col("route_type").isNull()).alias("null_route_metadata"),
@@ -591,6 +644,7 @@ quality_summary = enriched_observations.agg(
     F.count("arrival_delay_consistency_diff_seconds").alias("rows_with_delay_consistency_check"),
     n_where(F.col("vehicle_datetime") > F.col("feed_datetime")).alias("rows_with_future_vehicle_position"),
     n_where(~F.col("alert_snapshot_available_flag")).alias("rows_without_alert_snapshot"),
+    n_where(F.col("alert_snapshot_rejected_flag")).alias("rows_with_isolated_alert_snapshot"),
     F.max("alert_snapshot_age_seconds").alias("max_alert_snapshot_age_seconds"),
     n_where(F.col("service_active_flag").isNull()).alias("rows_with_unknown_service_status"),
     n_where(F.col("service_active_flag") == False).alias("rows_on_removed_service"),
@@ -606,6 +660,10 @@ quality_summary.show(truncate=False, vertical=True)
 quality = quality_summary.first().asDict()
 if quality["total_rows"] != source_count:
     raise ValueError("Final row count differs from realtime source count; write blocked")
+for name in schedule_metadata:
+    assert_no_rows(enriched_observations,
+        F.col("schedule_metadata_conflict_flag") & F.col(name).isNotNull(),
+        "Conflicting static metadata leaked to operational observations")
 if enriched_observations.filter(
     F.col("active_alert_count").isNull()
     | (F.col("active_alert_count") != F.size("active_alert_ids"))
@@ -648,6 +706,8 @@ validation_passed = True
 
 if not validation_passed:
     raise RuntimeError("Complete validation before persisting")
+if not ALLOW_ENRICHMENT_OVERWRITE:
+    raise RuntimeError("Enrichment validated; overwrite disabled until explicitly authorized")
 (
     enriched_observations.write
     .format("delta")
@@ -691,5 +751,5 @@ saved_output.orderBy(*OBS_KEY).select(
 # MAGIC %md
 # MAGIC ## Assumptions and Operational Limits
 # MAGIC Legacy alert rows retain their historical full-snapshot assumption. After the reviewed audit migration and notebook 05 deployment, successful FULL_DATASET audit records add explicit empty-snapshot evidence. DIFFERENTIAL is rejected upstream. Legacy empty snapshots cannot be reconstructed; the latest evidence may still be stale and feed-time alignment does not establish ingestion-time availability.
-# MAGIC Static schedules are not versioned by service validity in the existing Silver schema, and upstream nearest-time vehicle matching can include future positions; the coverage and timing diagnostics must therefore be reviewed before later ML use.
+# MAGIC Static schedules are not versioned by service validity in the existing Silver schema. Conflicting route/direction metadata is masked as unknown; upstream notebook 06 enforces backward vehicle and publication timestamps. Coverage and timing diagnostics still require review before ML use.
 # MAGIC Europe/Rome midnight arithmetic follows the requested rule and preserves GTFS seconds, with transition-day rows explicitly exposed for review; an unavailable alert snapshot means unknown coverage even when the matched-alert count is zero.

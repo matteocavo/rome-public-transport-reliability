@@ -1,5 +1,8 @@
 # Contratto di audit dell'ingestion GTFS-Realtime
 
+**Stato runtime al 26 ottobre 2026:** Silver osservazioni v10, enrichment v10 (56,941,882 righe) e input scoring v5 (26,327 righe) allineati al feed **1793001463 / 2026-10-26T08:57:43+01:00**. Gold operativo validato, refresh **2026-10-26T09:27:31.249044+00:00**. Sono dati del batch validato, non una promessa di latenza live. Prediction e metriche Spark restano evidenze storiche. Job downstream separato predisposto, **PAUSED**, con proposta iniziale ogni 2 ore basata sul benchmark di circa 45 minuti; ingestion 05 invariata ogni 10 minuti. [Evidenze, limiti e orchestrazione](DOWNSTREAM_RUNTIME_ROLLOUT.md).
+
+
 ## Confine dell'architettura operativa
 
 L'ingestion resta responsabilità di Databricks. L'inventario in sola lettura del 25 ottobre
@@ -9,7 +12,7 @@ dati (freshness) Bronze non implica quindi feature aggiornate. Un DAG downstream
 contratto di readiness, da autorizzare separatamente, sono specificati nell'[handoff
 operativo](OPERATIONAL_ML_HANDOFF.md). n8n coordinerà chiamate FastAPI/retry/alert esterni
 dopo la readiness, senza sostituire questa pianificazione ingestion. La PR di handoff
-architetturale non modifica impostazioni runtime.
+architetturale non modificava impostazioni runtime. Il rollout successivo del 26 ottobre ha ora validato il downstream, senza cambiare il Job ingestion esistente.
 
 ## Ambito e stato del deployment
 

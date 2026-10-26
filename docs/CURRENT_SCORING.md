@@ -1,8 +1,11 @@
 # Feature condivise e input dell'export di inference (PR3)
 
+**Stato runtime al 26 ottobre 2026:** Silver osservazioni v10, enrichment v10 (56,941,882 righe) e input scoring v5 (26,327 righe) allineati al feed **1793001463 / 2026-10-26T08:57:43+01:00**. Gold operativo validato, refresh **2026-10-26T09:27:31.249044+00:00**. Sono dati del batch validato, non una promessa di latenza live. Prediction e metriche Spark restano evidenze storiche. Job downstream separato predisposto, **PAUSED**, con proposta iniziale ogni 2 ore basata sul benchmark di circa 45 minuti; ingestion 05 invariata ogni 10 minuti. [Evidenze, limiti e orchestrazione](DOWNSTREAM_RUNTIME_ROLLOUT.md).
+
+
 **Architettura corrente:** Databricks gestisce la preparazione degli input osservabili; il futuro backend FastAPI/sklearn gestisce l'inference del modello operativo. [ADR-001](ARCHITECTURE_DECISIONS.md) sostituisce il percorso operativo Spark proposto. I [contratti di export training/inference](OPERATIONAL_ML_HANDOFF.md) preservano ordine delle 47 feature e identità senza etichette future. La soglia storica di probabilità Spark 0.45 non diventa automaticamente la soglia del futuro backend.
 
-PR3 è stata distribuita e validata in un rollout controllato autorizzato separatamente il 25 ottobre 2026 da main `c343f1e8420a801bab98d22f298c939f4b8c0ae0`. La preparazione condivisa ha superato la parità Spark vecchio/nuovo; lo staging degli input è stato creato una sola volta e riletto con corrispondenza esatta. Run MLflow, modelli, prediction, Gold e output dashboard esistenti sono invariati. Il notebook 12 resta refit/replay storico; l'implementazione PR4 di persistenza Spark è preservata come riferimento, non come target operativo. **L'ultimo input Silver disponibile è del 2 ottobre, non un feed live aggiornato.**
+PR3 è stata distribuita e validata in un rollout controllato autorizzato separatamente il 25 ottobre 2026 da main `c343f1e8420a801bab98d22f298c939f4b8c0ae0`. La preparazione condivisa ha superato la parità Spark vecchio/nuovo; lo staging degli input è stato creato una sola volta e riletto con corrispondenza esatta. Run MLflow, modelli, prediction, Gold e output dashboard esistenti sono invariati. Il notebook 12 resta refit/replay storico; l'implementazione PR4 di persistenza Spark è preservata come riferimento, non come target operativo. **Questa era la snapshot storica PR3 del 2 ottobre; lo stato corrente è nel riepilogo del rollout del 26 ottobre.**
 
 ## Architettura e selezione
 
@@ -11,7 +14,7 @@ PR3 è stata distribuita e validata in un rollout controllato autorizzato separa
 - Training: il notebook 08 chiama il costruttore condiviso, aggiunge i campi audit provvisori originali della stessa snapshot e preserva proiezione originale della tabella delle feature e filtro di ammissibilità. Solo il notebook 09 associa osservazioni future e crea etichette proxy realizzate. I notebook 09–12 sono invariati.
 - Input corrente: il notebook `08_current_scoring_dataset` legge direttamente Silver, limita lo storico all'epoca del feed selezionata, calcola le feature condivise su tutte le osservazioni passate/correnti valide e seleziona poi una snapshot del feed. Non legge mai le tabelle delle feature/etichette né richiede un valore di ritardo alla fermata successiva.
 
-L'epoca predefinita è il timestamp massimo del feed Silver non successivo all'istante di preparazione. È possibile richiedere un'epoca esplicita per la validazione controllata. Non avviene fallback a una popolazione di scoring non vuota precedente. Una snapshot senza righe ammissibili blocca l'overwrite. L'ultima Silver disponibile non è necessariamente aggiornata: l'anzianità del feed viene stampata e questa PR non inventa uno SLA di freschezza dei dati (freshness) né aggiorna Silver.
+L'epoca predefinita è il timestamp massimo del feed Silver non successivo all'istante di preparazione. È possibile richiedere un'epoca esplicita per la validazione controllata. Non avviene fallback a una popolazione di scoring non vuota precedente. Una snapshot senza righe ammissibili blocca l'overwrite. L'ultima Silver disponibile non è necessariamente aggiornata: l'anzianità del feed viene stampata. Il notebook di preparazione scoring non aggiorna Silver e non definisce uno SLA; il refresh upstream appartiene ai notebook 06/07.
 
 ## Contratto dell'osservazione e della fermata successiva
 
@@ -109,7 +112,7 @@ La seguente procedura è stata seguita nel rollout autorizzato. Conservare i pas
 5. Non eseguire training, scoring, registrazione, Gold o dashboard. Non collegare Job/pianificazione nell'ambito di questa procedura storica. Il notebook 12 rappresenta replay etichettato; l'inference operativa indipendente appartiene al futuro backend esterno.
 
 
-## Risultati della validazione runtime controllata
+## Risultati storici del rollout PR3 (25 ottobre 2026)
 
 ### Notebook distribuiti e baseline delle sorgenti
 
@@ -139,7 +142,7 @@ I controlli di provenienza storica sono passati in Spark. Join indipendenti stre
 
 Il corpo effettivo del notebook di scoring è stato eseguito su Silver v8 fissata con `ALLOW_STAGING_OVERWRITE=False`; ha generato dopo la validazione solo l'errore atteso del gate di scrittura disabilitato. Dopo l'accettazione di tutti i risultati in sola lettura, la run di scrittura/rilettura 1103286384923896 (evidenze runtime conservate privatamente) ha abilitato esplicitamente il gate nell'esecuzione isolata ed effettuato una sola scrittura controllata. Il valore predefinito del notebook distribuito resta False.
 
-Lo staging non esisteva prima del rollout. Contiene ora **24,797 righe**, **300 linee**, **1,313 corse**, **1,312 veicoli** e **6,740 fermate osservate**, tutte all'epoca **1790928849**. Un controllo indipendente con finestre SQL ha riprodotto il conteggio ammissibile, incluse **236 righe la cui fermata successiva rappresentata non aveva una stima del ritardo in arrivo** e **55 transizioni con sequenza sparsa**. Non era quindi richiesto alcun ritardo alla fermata successiva o esito futuro.
+Lo staging non esisteva prima del rollout PR3. Fu creato con **24,797 righe**, **300 linee**, **1,313 corse**, **1,312 veicoli** e **6,740 fermate osservate**, tutte all'epoca **1790928849**. Un controllo indipendente con finestre SQL ha riprodotto il conteggio ammissibile, incluse **236 righe la cui fermata successiva rappresentata non aveva una stima del ritardo in arrivo** e **55 transizioni con sequenza sparsa**. Non era quindi richiesto alcun ritardo alla fermata successiva o esito futuro.
 
 Duplicati alla granularità prevista: **0**. Ordinamento target non valido: **0**. ID dell'osservazione corrente, ID della fermata successiva e stato fisico del veicolo sono stati ispezionati separatamente. Per esempio, un'osservazione alla sequenza 9 aveva come target la sequenza 10 mentre il veicolo fisico restava alla sequenza 8; le identità non sono state confuse. Gli ID fermata ripetuti restano regolati da sequenze crescenti, non da una disuguaglianza generalizzata e non valida degli ID fermata.
 
@@ -220,8 +223,64 @@ Non è servito rollback. Sorgente runtime 08 originale e metadati di aggiornamen
 
 Nessun modello è stato caricato, addestrato o usato per transform durante PR3. Nessuna run MLflow o registrazione creata/modificata e notebook 09–13 non eseguiti. Gold, dashboard, Power BI, impostazioni ingestion e repository dell'app non sono stati toccati. Il contratto degli input validato è riusato per l'handoff operativo esterno; freshness della sorgente e incidenza elevata di valori mancanti restano limiti. Questo risultato non dichiara un servizio operativo corrente o qualità delle prediction.
 
-## Divario di freshness downstream
+## Divario di freshness downstream e successivo riallineamento
 
 L'inventario in sola lettura del 25 ottobre 2026 conferma un solo Job pianificato con un task: notebook 05, ogni 10 minuti. Non invoca 06, 07 o la preparazione degli input correnti di scoring. Bronze Trip Updates è avanzata all'epoca 1792960055; osservazioni Silver/enrichment e staging restano a 1790928849. Il gate overwrite staging resta OFF per default. Non è configurato alcun refresh downstream automatico.
 
-Il prossimo rollout autorizzato separatamente deve implementare la catena di dipendenze con versioni fissate 05 -> 06 -> 07 -> `08_current_scoring_dataset`, misurare i costi sull'intero storico, riconciliare comportamento di duplicati/sorgenti/fuso orario e pubblicare un manifest di readiness validato prima di inference esterna. Non pianificare etichettatura/training storici a questa cadenza. Vedi [analisi della freshness e accettazione dell'orchestrazione](OPERATIONAL_ML_HANDOFF.md#divario-di-freshness-e-disegno-dellorchestrazione-interna).
+Il disegno del rollout successivamente autorizzato prevedeva la catena di dipendenze con versioni fissate 05 -> 06 -> 07 -> `08_current_scoring_dataset`, misurare i costi sull'intero storico, riconciliare comportamento di duplicati/sorgenti/fuso orario e pubblicare un manifest di readiness validato prima di inference esterna. Non pianificare etichettatura/training storici a questa cadenza. Vedi [analisi della freshness e accettazione dell'orchestrazione](OPERATIONAL_ML_HANDOFF.md#divario-di-freshness-e-disegno-dellorchestrazione-interna).
+
+Il rollout del 26 ottobre ha validato quella catena manualmente, con Job separato ora predisposto in pausa. Vedi il [report runtime](DOWNSTREAM_RUNTIME_ROLLOUT.md).
+
+## Profilo degli input nel batch corrente del 26 ottobre
+
+Valori grezzi preservati, nessuna nuova imputazione; tutti i NaN/infiniti numerici sono zero. Le quote NULL non dimostrano qualità predittiva.
+
+| Feature | NULL | % |
+| --- | ---: | ---: |
+| `feed_hour` | 0 | 0.00 |
+| `feed_minute` | 0 | 0.00 |
+| `day_of_week` | 0 | 0.00 |
+| `is_weekend` | 0 | 0.00 |
+| `minutes_since_midnight` | 0 | 0.00 |
+| `current_arrival_delay_seconds` | 409 | 1.55 |
+| `current_departure_delay_seconds` | 19,571 | 74.34 |
+| `abs_current_delay_seconds` | 409 | 1.55 |
+| `is_currently_delayed_flag` | 409 | 1.55 |
+| `is_currently_early_flag` | 409 | 1.55 |
+| `lag_1_arrival_delay_seconds` | 1,881 | 7.14 |
+| `lag_2_arrival_delay_seconds` | 3,304 | 12.55 |
+| `lag_3_arrival_delay_seconds` | 4,671 | 17.74 |
+| `rolling_mean_delay_last_3_stops` | 365 | 1.39 |
+| `rolling_max_delay_last_3_stops` | 365 | 1.39 |
+| `rolling_std_delay_last_3_stops` | 1,840 | 6.99 |
+| `delay_change_from_previous_stop` | 1,925 | 7.31 |
+| `delay_acceleration` | 3,389 | 12.87 |
+| `scheduled_seconds_to_next_stop` | 20,077 | 76.26 |
+| `distance_to_next_stop_meters` | 20,077 | 76.26 |
+| `vehicle_speed` | 20,551 | 78.06 |
+| `vehicle_bearing` | 20,899 | 79.38 |
+| `vehicle_odometer` | 2,831 | 10.75 |
+| `current_stop_sequence` | 49 | 0.19 |
+| `vehicle_position_staleness_seconds` | 49 | 0.19 |
+| `vehicle_position_available_flag` | 0 | 0.00 |
+| `active_alert_flag` | 0 | 0.00 |
+| `active_alert_count` | 0 | 0.00 |
+| `active_detour_flag` | 0 | 0.00 |
+| `active_construction_flag` | 0 | 0.00 |
+| `historical_route_mean_delay` | 0 | 0.00 |
+| `historical_stop_mean_delay` | 0 | 0.00 |
+| `historical_route_stop_mean_delay` | 0 | 0.00 |
+| `historical_route_hour_mean_delay` | 0 | 0.00 |
+| `historical_route_observation_count` | 0 | 0.00 |
+| `historical_stop_observation_count` | 0 | 0.00 |
+| `missing_vehicle_position` | 0 | 0.00 |
+| `missing_current_arrival_delay` | 0 | 0.00 |
+| `missing_current_departure_delay` | 0 | 0.00 |
+| `missing_historical_route_delay` | 0 | 0.00 |
+| `missing_historical_stop_delay` | 0 | 0.00 |
+| `missing_alert_snapshot` | 0 | 0.00 |
+| `route_id` | 0 | 0.00 |
+| `route_type` | 20,072 | 76.24 |
+| `direction_id` | 0 | 0.00 |
+| `agency_id` | 20,072 | 76.24 |
+| `current_status` | 49 | 0.19 |

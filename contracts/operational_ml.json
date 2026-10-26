@@ -266,9 +266,9 @@
   },
   "inference": {
     "table": "rome_transport.features.next_stop_delay_scoring",
-    "validated_version": 0,
-    "validated_feed_timestamp": 1790928849,
-    "validated_rows": 24797,
+    "validated_version": 5,
+    "validated_feed_timestamp": 1793001463,
+    "validated_rows": 26327,
     "identity_columns": [
       "feed_timestamp",
       "feed_datetime",
@@ -361,7 +361,13 @@
       "feature_prepared_at",
       "feature_preparation_batch_id",
       "feature_contract_hash"
-    ]
+    ],
+    "historical_validation": {
+      "version": 0,
+      "feed_timestamp": 1790928849,
+      "rows": 24797
+    },
+    "validated_at": "2026-10-26T09:20:34.065143+00:00"
   },
   "historical_model_threshold": 0.45,
   "historical_model_comparison": ">",
@@ -381,7 +387,9 @@
       "grain": [
         "singleton"
       ],
-      "status": "historical_snapshot"
+      "status": "current_operations_with_historical_reference",
+      "operational_metric_prefix": "ops_",
+      "operational_metric_definition": "reported_current_stop_arrival_delay_seconds"
     },
     {
       "resource": "/reliability/routes",
@@ -389,7 +397,9 @@
       "grain": [
         "route_id"
       ],
-      "status": "historical_snapshot"
+      "status": "current_operations_with_historical_reference",
+      "operational_metric_prefix": "ops_",
+      "operational_metric_definition": "reported_current_stop_arrival_delay_seconds"
     },
     {
       "resource": "/reliability/stops",
@@ -397,7 +407,9 @@
       "grain": [
         "stop_id"
       ],
-      "status": "historical_snapshot"
+      "status": "current_operations_with_historical_reference",
+      "operational_metric_prefix": "ops_",
+      "operational_metric_definition": "reported_current_stop_arrival_delay_seconds"
     },
     {
       "resource": "/reliability/temporal",
@@ -407,7 +419,9 @@
         "day_of_week",
         "feed_hour"
       ],
-      "status": "historical_snapshot"
+      "status": "current_operations_with_historical_reference",
+      "operational_metric_prefix": "ops_",
+      "operational_metric_definition": "reported_current_stop_arrival_delay_seconds"
     },
     {
       "resource": "/scoring/inputs",
@@ -419,7 +433,7 @@
         "stop_sequence",
         "stop_id"
       ],
-      "status": "historical_input_snapshot"
+      "status": "validated_current_input_snapshot"
     },
     {
       "resource": "/predictions/reference",
@@ -457,7 +471,7 @@
       "grain": [
         "singleton"
       ],
-      "status": "historical_refresh_metadata"
+      "status": "validated_operational_release_with_historical_model_lineage"
     },
     {
       "resource": "/monitoring/ingestion",

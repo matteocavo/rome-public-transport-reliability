@@ -15,6 +15,40 @@
 
 # COMMAND ----------
 
+# MAGIC %run ./13_current_operational_analytics
+
+# COMMAND ----------
+
+ALLOW_GOLD_OVERWRITE = False
+GOLD_REFRESH_MODE = "current_operations"
+try:
+    ALLOW_GOLD_OVERWRITE = dbutils.widgets.get("allow_gold_overwrite").lower() == "true"
+except Exception:
+    pass  # No supplied parameter: preserve the disabled default.
+if not ALLOW_GOLD_OVERWRITE:
+    raise RuntimeError("Gold overwrite disabled until explicitly authorized")
+if GOLD_REFRESH_MODE == "current_operations":
+    import json
+    scoring_version = int(spark.sql(
+        "DESCRIBE HISTORY rome_transport.features.next_stop_delay_scoring LIMIT 1").first()["version"])
+    staging_release = spark.read.option("versionAsOf", scoring_version).table(
+        "rome_transport.features.next_stop_delay_scoring")
+    lineage_versions = staging_release.select("source_silver_version").distinct().limit(2).collect()
+    if len(lineage_versions) != 1 or lineage_versions[0][0] is None:
+        raise ValueError("Single pinned enrichment source version required")
+    enrichment_version = int(lineage_versions[0][0])
+    current_feed = spark.table("rome_transport.silver.realtime_enriched_observations").agg(
+        F.max("feed_timestamp")).first()[0]
+    if staging_release.agg(F.max("feed_timestamp")).first()[0] != current_feed:
+        raise ValueError("Scoring input is behind latest enrichment; refresh staging first")
+    report = refresh_operational_gold(spark, enrichment_version=enrichment_version,
+                                     scoring_version=scoring_version, allow_write=True)
+    dbutils.notebook.exit(json.dumps(report, default=str))
+if GOLD_REFRESH_MODE != "historical_reference":
+    raise ValueError("Unknown Gold refresh mode")
+
+# COMMAND ----------
+
 from datetime import datetime, timezone
 from functools import reduce
 import json

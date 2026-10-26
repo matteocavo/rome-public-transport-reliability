@@ -19,6 +19,10 @@ OUTPUT_TABLE = "rome_transport.features.next_stop_delay_scoring"
 SOURCE_VERSION = None  # Pin a retained Silver version to reproduce a preparation.
 REQUESTED_FEED_TIMESTAMP = None  # Optional explicit epoch; never later than preparation time.
 ALLOW_STAGING_OVERWRITE = False  # Explicit operator gate; repository-first PR3 does not create runtime tables.
+try:
+    ALLOW_STAGING_OVERWRITE = dbutils.widgets.get("allow_staging_overwrite").lower() == "true"
+except Exception:
+    pass
 prepared_at = datetime.now(timezone.utc)
 batch_id = str(uuid.uuid4())
 if SOURCE_VERSION is None:
