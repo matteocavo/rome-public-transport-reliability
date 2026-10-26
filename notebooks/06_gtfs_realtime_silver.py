@@ -12,11 +12,51 @@
 
 from pyspark.sql import functions as F
 
-trip_updates = spark.table("rome_transport.bronze.trip_updates")
-vehicle_positions = spark.table("rome_transport.bronze.vehicle_positions")
-service_alerts = spark.table("rome_transport.bronze.service_alerts")
-trip_stop_schedule = spark.table("rome_transport.silver.trip_stop_schedule")
-service_calendar = spark.table("rome_transport.silver.service_calendar")
+spark.conf.set("spark.sql.session.timeZone", "Europe/Rome")
+ALLOW_SILVER_OVERWRITE = False
+try:
+    ALLOW_SILVER_OVERWRITE = dbutils.widgets.get("allow_silver_overwrite").lower() == "true"
+except Exception:
+    pass
+SOURCE_VERSION_OVERRIDES = {}
+SOURCE_TABLES = {
+    "trip_updates": "rome_transport.bronze.trip_updates",
+    "vehicle_positions": "rome_transport.bronze.vehicle_positions",
+    "service_alerts": "rome_transport.bronze.service_alerts",
+    "trip_stop_schedule": "rome_transport.silver.trip_stop_schedule",
+    "service_calendar": "rome_transport.silver.service_calendar",
+}
+source_versions = {}
+sources = {}
+for name, table in SOURCE_TABLES.items():
+    version = SOURCE_VERSION_OVERRIDES.get(name)
+    if version is None:
+        version = int(spark.sql(f"DESCRIBE HISTORY {table} LIMIT 1").first()["version"])
+    source_versions[name] = int(version)
+    sources[name] = spark.read.option("versionAsOf", int(version)).table(table)
+trip_updates = sources["trip_updates"]
+vehicle_positions = sources["vehicle_positions"]
+service_alerts = sources["service_alerts"]
+trip_stop_schedule = sources["trip_stop_schedule"]
+service_calendar = sources["service_calendar"]
+print({"source_versions": source_versions, "write_enabled": ALLOW_SILVER_OVERWRITE})
+
+
+def deduplicate_latest(df, keys):
+    """Preserve latest-ingestion semantics; reject conflicting latest-time ties."""
+    from pyspark.sql.window import Window
+    missing = None
+    for key in keys:
+        bad = F.col(key).isNull()
+        missing = bad if missing is None else missing | bad
+    if df.filter(missing | F.col("_ingestion_timestamp").isNull()).limit(1).count():
+        raise ValueError("Missing source observation key/ingestion timestamp; write blocked")
+    window = Window.partitionBy(*keys).orderBy(F.col("_ingestion_timestamp").desc())
+    latest = df.withColumn("_latest_rank", F.dense_rank().over(window)).filter(
+        F.col("_latest_rank") == 1).drop("_latest_rank").dropDuplicates()
+    if latest.groupBy(*keys).count().filter(F.col("count") > 1).limit(1).count():
+        raise ValueError("Conflicting payloads at latest ingestion time; write blocked")
+    return latest
 
 source_counts = {
     "trip_updates": trip_updates.count(),
@@ -117,39 +157,10 @@ trip_updates_dedup_key = [
 ]
 
 trip_updates_before_count = trip_updates.count()
-trip_updates_dedup_window = (
-    Window
-    .partitionBy(*trip_updates_dedup_key)
-    .orderBy(F.col("_ingestion_timestamp").desc())
-)
-
-trip_updates_silver = (
-    trip_updates_silver
-    .withColumn("_dedup_rank", F.row_number().over(trip_updates_dedup_window))
-    .filter(F.col("_dedup_rank") == 1)
-    .drop("_dedup_rank")
-)
-
+trip_updates_silver = deduplicate_latest(trip_updates_silver, trip_updates_dedup_key)
 trip_updates_after_count = trip_updates_silver.count()
-print(f"trip_updates before dedup: {trip_updates_before_count}")
-print(f"trip_updates after dedup: {trip_updates_after_count}")
-print(f"duplicate rows removed: {trip_updates_before_count - trip_updates_after_count}")
-
-trip_updates_duplicate_groups = (
-    trip_updates
-    .groupBy(*trip_updates_dedup_key)
-    .count()
-    .filter(F.col("count") > 1)
-)
-print(f"duplicate groups remaining: {trip_updates_duplicate_groups.count()}")
-
-(
-    trip_updates_silver.write
-    .format("delta")
-    .mode("overwrite")
-    .option("overwriteSchema", "true")
-    .saveAsTable("rome_transport.silver.trip_updates")
-)
+print({"trip_updates_before": trip_updates_before_count, "trip_updates_after": trip_updates_after_count,
+       "duplicates_removed": trip_updates_before_count - trip_updates_after_count})
 
 
 # COMMAND ----------
@@ -198,13 +209,8 @@ vehicle_positions_silver = (
 
 vehicle_positions_silver.printSchema()
 
-(
-    vehicle_positions_silver.write
-    .format("delta")
-    .mode("overwrite")
-    .option("overwriteSchema", "true")
-    .saveAsTable("rome_transport.silver.vehicle_positions")
-)
+vehicle_positions_silver = deduplicate_latest(
+    vehicle_positions_silver, ["feed_timestamp", "entity_id"])
 
 
 # COMMAND ----------
@@ -216,32 +222,12 @@ vehicle_positions_silver.printSchema()
 
 # COMMAND ----------
 
-spark.sql("""
-SELECT
-    COUNT(*) AS rows,
-    SUM(CASE WHEN service_date IS NULL THEN 1 ELSE 0 END) AS null_service_date,
-    SUM(CASE WHEN trip_id IS NULL THEN 1 ELSE 0 END) AS null_trip_id,
-    SUM(CASE WHEN vehicle_id IS NULL THEN 1 ELSE 0 END) AS null_vehicle_id
-FROM rome_transport.silver.trip_updates
-""").show(truncate=False)
-
-spark.sql("""
-SELECT
-    COUNT(*) AS rows,
-    SUM(CASE WHEN service_date IS NULL THEN 1 ELSE 0 END) AS null_service_date,
-    SUM(CASE WHEN trip_id IS NULL THEN 1 ELSE 0 END) AS null_trip_id,
-    SUM(CASE WHEN vehicle_id IS NULL THEN 1 ELSE 0 END) AS null_vehicle_id,
-    SUM(CASE WHEN latitude IS NULL OR longitude IS NULL THEN 1 ELSE 0 END) AS null_position
-FROM rome_transport.silver.vehicle_positions
-""").show(truncate=False)
-
-trip_updates_duplicate_groups = (
-    spark.table("rome_transport.silver.trip_updates")
-    .groupBy("feed_timestamp", "entity_id", "trip_id", "stop_sequence", "stop_id")
-    .count()
-    .filter(F.col("count") > 1)
-)
-print(f"trip_updates duplicate groups in Silver: {trip_updates_duplicate_groups.count()}")
+for name, frame in [("trip_updates", trip_updates_silver), ("vehicle_positions", vehicle_positions_silver)]:
+    if name == "trip_updates" and frame.filter(F.col("service_date").isNull()).limit(1).count():
+        raise ValueError(f"{name}: invalid service date; write blocked")
+    # VehiclePosition trip/service dates are optional; preserve NULL as the original parser does.
+    print({"silver_input": name, "rows": frame.count(),
+           "unknown_service_dates": frame.filter(F.col("service_date").isNull()).count()})
 
 
 # COMMAND ----------
@@ -255,8 +241,8 @@ print(f"trip_updates duplicate groups in Silver: {trip_updates_duplicate_groups.
 
 from pyspark.sql.window import Window
 
-tu = spark.table("rome_transport.silver.trip_updates").alias("tu")
-vp = spark.table("rome_transport.silver.vehicle_positions").alias("vp")
+tu = trip_updates_silver.alias("tu")
+vp = vehicle_positions_silver.alias("vp")
 
 candidates = (
     tu.join(
@@ -265,6 +251,7 @@ candidates = (
             (F.col("tu.vehicle_id") == F.col("vp.vehicle_id")) &
             (F.col("tu.trip_id") == F.col("vp.trip_id")) &
             (F.col("vp.vehicle_timestamp") <= F.col("tu.feed_timestamp")) &
+            (F.col("vp.feed_timestamp") <= F.col("tu.feed_timestamp")) &
             ((F.col("tu.feed_timestamp") - F.col("vp.vehicle_timestamp")) <= 180)
         ),
         "left"
@@ -284,7 +271,9 @@ matching_window = (
         F.col("tu.stop_sequence"),
         F.col("tu.stop_id")
     )
-    .orderBy(F.col("position_time_diff_seconds").asc_nulls_last())
+    .orderBy(F.col("position_time_diff_seconds").asc_nulls_last(),
+             F.col("vp.feed_timestamp").desc_nulls_last(), F.col("vp._ingestion_timestamp").desc_nulls_last(),
+             F.col("vp.entity_id").asc_nulls_last())
 )
 
 matched = (
@@ -358,13 +347,7 @@ realtime_trip_stop_observations.printSchema()
 
 # COMMAND ----------
 
-(
-    realtime_trip_stop_observations.write
-    .format("delta")
-    .mode("overwrite")
-    .option("overwriteSchema", "true")
-    .saveAsTable("rome_transport.silver.realtime_trip_stop_observations")
-)
+# All three outputs are validated in memory before any overwrite below.
 
 
 # COMMAND ----------
@@ -376,7 +359,7 @@ realtime_trip_stop_observations.printSchema()
 
 # COMMAND ----------
 
-final_observations = spark.table("rome_transport.silver.realtime_trip_stop_observations")
+final_observations = realtime_trip_stop_observations
 final_validation = (
     final_observations
     .selectExpr(
@@ -414,3 +397,43 @@ if validation_metrics["matched_vehicle_positions"] > 0:
     assert validation_metrics["max_position_time_diff_seconds"] <= 180, "Position exceeds 180-second staleness limit"
 assert duplicate_metrics["duplicate_extra_rows"] == 0, "Duplicate final observation keys detected"
 assert validation_metrics["total_trip_updates"] == tu.count(), "Matching changed the Trip Update row count"
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Controlled persistence after complete validation
+# MAGIC Full rebuild from pinned Bronze; no append watermark exists. Default write gate stays OFF.
+# MAGIC The feed-time guard excludes positions published after the observation, even with an older vehicle timestamp.
+# MAGIC This is not a cross-table transaction. Downstream consumers require successful run completion.
+
+# COMMAND ----------
+
+outputs = {"trip_updates": trip_updates_silver, "vehicle_positions": vehicle_positions_silver,
+           "realtime_trip_stop_observations": realtime_trip_stop_observations}
+expected_counts = {}
+for name, frame in outputs.items():
+    destination = "rome_transport.silver." + name
+    expected = {f.name: f.dataType.simpleString() for f in spark.table(destination).schema.fields}
+    actual = {f.name: f.dataType.simpleString() for f in frame.schema.fields}
+    if actual != expected:
+        raise ValueError(f"{name}: schema differs from existing Silver; write blocked")
+    expected_counts[name] = frame.count()
+    if not expected_counts[name]:
+        raise ValueError(f"{name}: empty rebuild; write blocked")
+    source_max = sources["vehicle_positions" if name == "vehicle_positions" else "trip_updates"].agg(
+        F.max("feed_timestamp")).first()[0]
+    if frame.agg(F.max("feed_timestamp")).first()[0] != source_max:
+        raise ValueError(f"{name}: latest source epoch lost; write blocked")
+if not ALLOW_SILVER_OVERWRITE:
+    raise RuntimeError("Silver validation passed; overwrite disabled until explicitly authorized")
+written_versions = {}
+for name, frame in outputs.items():
+    destination = "rome_transport.silver." + name
+    frame.write.format("delta").mode("overwrite").saveAsTable(destination)
+    version = int(spark.sql(f"DESCRIBE HISTORY {destination} LIMIT 1").first()["version"])
+    saved = spark.read.option("versionAsOf", version).table(destination)
+    if saved.count() != expected_counts[name]:
+        raise ValueError(f"{name}: read-back count mismatch; stop downstream")
+    written_versions[name] = version
+print({"source_versions": source_versions, "written_versions": written_versions,
+       "counts": expected_counts, "quality_status": "PASSED"})

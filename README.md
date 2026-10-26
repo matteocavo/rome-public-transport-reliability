@@ -1,14 +1,17 @@
 # Rome Public Transport Reliability & Delay Prediction
 
+**Stato runtime al 26 ottobre 2026:** Silver osservazioni v10, enrichment v10 (56,941,882 righe) e input scoring v5 (26,327 righe) allineati al feed **1793001463 / 2026-10-26T08:57:43+01:00**. Gold operativo validato, refresh **2026-10-26T09:27:31.249044+00:00**. Sono dati del batch validato, non una promessa di latenza live. Prediction e metriche Spark restano evidenze storiche. Job downstream separato predisposto, **PAUSED**, con proposta iniziale ogni 2 ore basata sul benchmark di circa 45 minuti; ingestion 05 invariata ogni 10 minuti. [Evidenze, limiti e orchestrazione](docs/DOWNSTREAM_RUNTIME_ROLLOUT.md).
+
+
 Un lakehouse Databricks per i feed del trasporto pubblico di Roma, con analisi storiche dell'affidabilità, ricerca predittiva e dashboard di Business Intelligence. Il nuovo target operativo separa i dati Databricks dal futuro runtime ML FastAPI/Python/scikit-learn.
 
 **Stack:** Databricks · Apache Spark / PySpark · Delta Lake · Unity Catalog · MLflow · Databricks SQL · Databricks AI/BI Dashboards · Python · SQL
 
-**Stato al 25 ottobre 2026:** ingestion Bronze pianificata e operativa; Silver/features/scoring fermi al 2 ottobre. Gold e dashboard documentano snapshot storiche. Persistence e Random Forest sono i risultati ML storici di riferimento. Il percorso operativo Spark ML è sostituito dal target esterno FastAPI/sklearn: contratti implementati in questo repository, backend ancora da realizzare. Nessuna previsione live dichiarata. [Decisione architetturale](docs/ARCHITECTURE_DECISIONS.md), [contratti e misure](docs/OPERATIONAL_ML_HANDOFF.md), [roadmap](docs/ROADMAP.md).
+**Stato al 26 ottobre 2026:** ingestion Bronze pianificata e operativa; Silver, enrichment, input scoring e Gold operativo validati sul batch del 26 ottobre. Il nuovo Job downstream è predisposto in pausa, con proposta iniziale ogni 2 ore; non si dichiara ancora aggiornamento downstream automatico. Persistence e Random Forest restano risultati storici di riferimento; FastAPI/sklearn è il futuro runtime ML operativo. [Evidenze runtime e lag](docs/DOWNSTREAM_RUNTIME_ROLLOUT.md), [decisione](docs/ARCHITECTURE_DECISIONS.md), [contratti](docs/OPERATIONAL_ML_HANDOFF.md), [roadmap](docs/ROADMAP.md).
 
 ## Anteprima Dashboard
 
-**Export storico:** PDF e screenshot in tema chiaro conservano la dashboard precedente alla transizione architetturale. Alcuni testi di deployment/freshness e note metriche sono da correggere: non rappresentano il runtime operativo target. Il JSON locale contiene le correzioni; live publish e rigenerazione degli artifact richiedono un rollout separato. [Audit e piano preciso](dashboard/databricks/README.md).
+**Artifact di presentazione precedenti:** PDF e screenshot restano gli export storici della dashboard. Non rappresentano i nuovi KPI operativi. Il JSON locale legge i campi operativi Gold e separa il replay Spark storico; deploy, publish ed export aggiornati sono il passaggio successivo. [Audit e piano](dashboard/databricks/README.md).
 
 <p align="center">
   <img src="dashboard/databricks/screenshots/overview.png"
@@ -38,7 +41,7 @@ Google AI Studio: futura generazione e iterazione UX/UI React
 Dashboard AI/BI / Power BI separato: analisi curate, con date esplicite
 ```
 
-Le tabelle Delta sono governate tramite Unity Catalog. La dashboard interroga esclusivamente Gold. Il diagramma descrive il target: solo ingestion è pianificata oggi; orchestrazione downstream, backend, n8n e frontend sono attività future. Il tracciamento MLflow e i notebook Spark restano **ML storico / sperimentale**, conservati come ricerca e riferimento. Spark PipelineModel non è il runtime operativo target: smoke bloccato dalla whitelist Spark Connect e classic compute non disponibile nel workspace Free. [ADR-001](docs/ARCHITECTURE_DECISIONS.md).
+Le tabelle Delta sono governate tramite Unity Catalog. La dashboard interroga esclusivamente Gold. Il diagramma descrive il target: ingestion è pianificata; la catena downstream è validata manualmente e il Job separato è in pausa. Backend, n8n e frontend restano futuri. Il tracciamento MLflow e i notebook Spark restano **ML storico / sperimentale**, conservati come ricerca e riferimento. Spark PipelineModel non è il runtime operativo target: smoke bloccato dalla whitelist Spark Connect e classic compute non disponibile nel workspace Free. [ADR-001](docs/ARCHITECTURE_DECISIONS.md).
 
 ## Fonti dei dati
 
@@ -186,7 +189,7 @@ Tracciamento MLflow, selezione e replay storico sono completati. Lo stato storic
 
 ## Livello analitico Gold
 
-Tutti i controlli finali di validazione Gold risultano superati. I campi `major_delay_count/rate` si riferiscono al proxy futuro ≥300 secondi, con aggregazioni ponderate per osservazione.
+Il rilascio Gold operativo ha superato i controlli. I nuovi campi `ops_` descrivono i ritardi riportati alla fermata osservata, con tassi sui valori disponibili. Le colonne storiche senza prefisso, inclusi `major_delay_count/rate`, mantengono il proxy futuro ≥300 secondi e i valori di riferimento. Non sono metriche direttamente confrontabili: popolazione, esito e denominatore differiscono. [Definizioni e conteggi](docs/DOWNSTREAM_RUNTIME_ROLLOUT.md).
 
 | Tabella in `rome_transport.gold` | Finalità e granularità |
 | --- | --- |
@@ -199,9 +202,9 @@ Tutti i controlli finali di validazione Gold risultano superati. I campi `major_
 | `model_performance` | Risultati congelati per task, dataset e metrica |
 | `analytics_refresh_metadata` | Versioni delle sorgenti e audit dell'aggiornamento |
 
-Le classifiche richiedono almeno **1.000 osservazioni** per linea (**354 linee ammissibili**) e almeno **500** per fermata (**5.172 fermate ammissibili**).
+Nel rilascio storico le classifiche richiedevano almeno **1.000 osservazioni** per linea (**354 linee ammissibili**) e **500** per fermata (**5.172 fermate ammissibili**). Il percorso operativo ricalcola i ranking con almeno 1.000 ritardi noti per linea e 500 per fermata, senza riusare i conteggi storici.
 
-## Principali risultati analitici
+## Risultati analitici storici del proxy futuro
 
 Gli aggregati storici coprono **9.975.703 osservazioni**: ritardo medio **24.7172 secondi**, mediana **−71 secondi**, P90 **644 secondi**, P95 **1.198 secondi** e P99 **3.102 secondi**. Il conteggio riportato dei ritardi ≥ 5 min è **1.878.569**, con quota **0.18831**, per il proxy alla fermata successiva ≥300 secondi.
 
@@ -319,12 +322,12 @@ Otto date di servizio non dimostrano generalizzazione sul lungo periodo o sull'i
 
 ## Sviluppi futuri
 
-Seguire la [roadmap operativa](docs/ROADMAP.md): freshness downstream, futuro repository `rome-mobility-intelligence`, FastAPI/sklearn con nuova valutazione/persistenza, inference, prediction history, n8n, serving/API, React/Google AI Studio, AI insight e Power BI separato. Questo repository mantiene ingestion, lakehouse, contratti, analytics, Gold e metadati di freshness. Nessun repository app è creato da questa PR.
+Seguire la [roadmap operativa](docs/ROADMAP.md): attivazione del Job downstream predisposto, futuro repository `rome-mobility-intelligence`, FastAPI/sklearn con nuova valutazione/persistenza, inference, prediction history, n8n, serving/API, React/Google AI Studio, AI insight e Power BI separato. Questo repository mantiene ingestion, lakehouse, contratti, analytics, Gold e metadati di freshness. Nessun repository app è creato da questa PR.
 
 ## Stato del progetto
 
-**Implementati e validati storicamente:** Bronze/Silver, associazione causale delle posizioni, Feature Engineering, etichettatura futura e filtro di qualità, esperimenti MLflow, selezione su validation, TEST congelato, replay batch, Gold, SQL e dashboard AI/BI. Ingestion pianificata operativa; il resto richiede refresh downstream. PDF/screenshot precedenti conservati come evidenza storica con issue dichiarate.
+**Implementati e validati storicamente:** Bronze/Silver, associazione causale delle posizioni, Feature Engineering, etichettatura futura e filtro di qualità, esperimenti MLflow, selezione su validation, TEST congelato, replay batch, Gold, SQL e dashboard AI/BI. Ingestion pianificata operativa; il percorso downstream operativo è ora validato manualmente; il suo Job resta in pausa. PDF/screenshot precedenti conservati come evidenza storica con issue dichiarate.
 
 **Percorso sostituito:** deployment Spark ML, conservato come implementazione storica/di riferimento; runtime operativo futuro FastAPI/sklearn.
 
-**Da completare:** orchestrazione downstream e freshness, backend operativo e presentazione app; riallineamento live dashboard/PDF/screenshot autorizzato separatamente. Non si dichiara un'API live, un modello operativo già distribuito o adozione cittadina.
+**Da completare:** attivazione controllata del Job downstream dopo verifica delle quote, backend operativo e presentazione app; riallineamento live dashboard/PDF/screenshot autorizzato separatamente. Non si dichiara un'API live, un modello operativo già distribuito o adozione cittadina.

@@ -1,5 +1,8 @@
 # Rome Public Transport Reliability & Delay Prediction
 
+**Stato runtime al 26 ottobre 2026:** Silver osservazioni v10, enrichment v10 (56,941,882 righe) e input scoring v5 (26,327 righe) allineati al feed **1793001463 / 2026-10-26T08:57:43+01:00**. Gold operativo validato, refresh **2026-10-26T09:27:31.249044+00:00**. Sono dati del batch validato, non una promessa di latenza live. Prediction e metriche Spark restano evidenze storiche. Job downstream separato predisposto, **PAUSED**, con proposta iniziale ogni 2 ore basata sul benchmark di circa 45 minuti; ingestion 05 invariata ogni 10 minuti. [Evidenze, limiti e orchestrazione](DOWNSTREAM_RUNTIME_ROLLOUT.md).
+
+
 ## Progetto end-to-end di Machine Learning e analisi dei dati
 
 **Stack tecnologico:** Databricks · Apache Spark / PySpark · Delta Lake · Unity Catalog · MLflow · Databricks SQL · Databricks AI/BI Dashboards · Python · SQL
@@ -12,7 +15,7 @@
 
 ---
 
-## Quadro dell'implementazione — 25 ottobre 2026
+## Quadro dell'implementazione — 26 ottobre 2026
 
 **Decisione corrente:** [ADR-001](ARCHITECTURE_DECISIONS.md) separa Databricks (ingestion,
 lakehouse, contratti delle feature e dei dati, analytics, Gold e freshness) dal futuro FastAPI/sklearn
@@ -20,11 +23,7 @@ lakehouse, contratti delle feature e dei dati, analytics, Gold e freshness) dal 
 React/Google AI Studio saranno il frontend. Spark ML è **ML storico / sperimentale**:
 si conservano risultati e codice, ma non è più il runtime operativo target.
 
-**Operativo oggi:** ingestion Bronze ogni 10 minuti. **Storico:** Silver, feature, scoring,
-Gold e valutazione Spark; staging validata al 2 ottobre. Il Job contiene solo 05:
-06-08 non sono dipendenze pianificate. [Contratti, misure e gap](OPERATIONAL_ML_HANDOFF.md).
-PDF/screenshot precedono questa decisione e presentano claim da correggere: il JSON locale
-è aggiornato, il rollout live e i nuovi export sono separati. [Audit](../dashboard/databricks/README.md).
+**Operativo oggi:** ingestion Bronze ogni 10 minuti; Silver, enrichment, input scoring e Gold operativo validati manualmente il 26 ottobre. Il Job downstream separato è predisposto in pausa. Il dataset etichettato, il replay e la valutazione Spark restano storici. [Evidenze e lag](DOWNSTREAM_RUNTIME_ROLLOUT.md). Il JSON locale separa dati operativi e modello storico; PDF/screenshot precedenti sono da sostituire dopo publish autorizzato. [Audit](../dashboard/databricks/README.md).
 
 Il documento mantiene il framework PACE e le motivazioni progettuali, distinguendo ipotesi iniziali, decisioni implementate, risultati verificati ed estensioni future. I risultati riportati provengono dalle esecuzioni validate comunicate per il progetto; questa revisione documentale non riesegue i Job Databricks.
 
@@ -695,7 +694,7 @@ Databricks SQL
 Databricks AI/BI Dashboards
 ```
 
-Le analisi descrittive e i risultati predittivi mantengono percorsi distinti, senza label negli input inference. Databricks orchestra 05/06/07/08; n8n readiness/chiamate backend/retry/alert; React e Google AI Studio frontend/API. La catena downstream e il backend sono da implementare secondo la roadmap; questa PR non li esegue.
+Le analisi descrittive e i risultati predittivi mantengono percorsi distinti, senza label negli input inference. Databricks orchestra 05/06/07/08; n8n readiness/chiamate backend/retry/alert; React e Google AI Studio frontend/API. La catena downstream è ora validata manualmente e il Job è predisposto in pausa; il backend resta da implementare secondo la roadmap.
 
 ---
 
@@ -1099,7 +1098,7 @@ Le metriche finali sono riferimenti fissi. L'elenco conserva il perimetro proget
 
 # 48. PERCORSO DI IMPLEMENTAZIONE
 
-Le fasi seguenti ricostruiscono il piano e gli esiti storici. Non sono la sequenza del nuovo deployment operativo: per quella valgono ADR-001 e la roadmap A-K. Silver/feature/replay/Gold non sono freschi nonostante l'ingestion Bronze pianificata.
+Le fasi seguenti ricostruiscono il piano e gli esiti storici. Non sono la sequenza del nuovo deployment operativo: per quella valgono ADR-001 e la roadmap A-K. Il rollout del 26 ottobre aggiorna Silver, enrichment, input corrente e Gold operativo; feature storiche, etichette e replay ML restano separati e non ricalcolati.
 
 ## Fase 1 — Ambiente
 
@@ -1306,7 +1305,7 @@ Questo rischio si è tradotto in un risultato utile: Persistence è rimasta la s
 
 ## Limiti residui dell'ambiente e dell'interpretazione
 
-Il tentativo storico di registrazione Spark non è riuscito; ADR-001 assegna il runtime operativo al futuro backend esterno. La dashboard interattiva richiede autenticazione; il PDF e l'export JSON ne consentono la presentazione nel portfolio senza attribuirle accesso pubblico live. Otto date di servizio limitano la generalizzazione; gli esiti futuri GTFS-Realtime sono proxy operativi e la causalità dei timestamp non prova l'esatta disponibilità in ingestion. Le definizioni di ritardo e rischio del JSON corrente sono allineate nella sezione 14; gli esiti restano proxy futuri GTFS-RT.
+Il tentativo storico di registrazione Spark non è riuscito; ADR-001 assegna il runtime operativo al futuro backend esterno. La dashboard interattiva richiede autenticazione; il PDF e l'export JSON ne consentono la presentazione nel portfolio senza attribuirle accesso pubblico live. Otto date di servizio limitano la generalizzazione; gli esiti futuri GTFS-Realtime sono proxy operativi e la causalità dei timestamp non prova l'esatta disponibilità in ingestion. Il JSON corrente separa i ritardi operativi riportati alla fermata osservata dagli esiti proxy futuri e dalle probabilità del replay storico.
 
 ---
 
@@ -1456,7 +1455,7 @@ Il modello di Machine Learning è una componente del progetto, non il progetto n
 
 ## Stato finale ed estensioni
 
-Il percorso storico è implementato fino a replay, Gold e dashboard autenticata; ingestion è pianificata, dati downstream non aggiornati. Il target operativo esterno è definito ma non implementato. JSON locale corretto, PDF/screenshot precedenti da sostituire dopo rollout autorizzato; Power BI resta separato. Dati, target, modelli e metriche storiche non vengono ricalcolati.
+Il percorso storico è implementato fino a replay, Gold e dashboard autenticata; ingestion è pianificata e il downstream operativo è validato manualmente. Il target operativo esterno è definito ma non implementato. JSON locale corretto, PDF/screenshot precedenti da sostituire dopo rollout autorizzato; Power BI resta separato. Dati, target, modelli e metriche storiche non vengono ricalcolati.
 
 ## Roadmap operativa corrente
 

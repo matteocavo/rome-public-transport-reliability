@@ -4,7 +4,7 @@
       "name": "executive_overview_kpis",
       "displayName": "Executive Overview KPIs",
       "queryLines": [
-        "SELECT * FROM rome_transport.gold.executive_overview"
+        "SELECT * FROM (SELECT ops_observation_count AS `total_observations`, ops_distinct_snapshots AS `distinct_snapshots`, ops_distinct_service_dates AS `distinct_service_dates`, ops_distinct_routes AS `distinct_routes`, ops_distinct_trips AS `distinct_trips`, ops_distinct_vehicles AS `distinct_vehicles`, ops_mean_delay_seconds AS `mean_realized_delay_seconds`, ops_median_delay_seconds AS `median_realized_delay_seconds`, ops_p90_delay_seconds AS `p90_realized_delay_seconds`, ops_p95_delay_seconds AS `p95_realized_delay_seconds`, ops_p99_delay_seconds AS `p99_realized_delay_seconds`, ops_major_delay_count AS `major_delay_count`, ops_major_delay_rate AS `major_delay_rate`, ops_early_count AS `early_count`, ops_early_rate AS `early_rate`, ops_on_time_count AS `on_time_count`, ops_on_time_rate AS `on_time_rate`, ops_moderate_delay_count AS `moderate_delay_count`, ops_moderate_delay_rate AS `moderate_delay_rate`, `latest_prediction_feed_timestamp` AS `latest_prediction_feed_timestamp`, `latest_prediction_feed_datetime` AS `latest_prediction_feed_datetime`, `latest_scored_rows` AS `latest_scored_rows`, `latest_predicted_major_delay_count` AS `latest_predicted_major_delay_count`, `latest_predicted_major_delay_rate` AS `latest_predicted_major_delay_rate`, `latest_probability_mean` AS `latest_probability_mean`, `latest_probability_p90` AS `latest_probability_p90`, `latest_probability_p95` AS `latest_probability_p95`, `latest_probability_p99` AS `latest_probability_p99` FROM rome_transport.gold.executive_overview WHERE ops_observation_count IS NOT NULL AND ops_release_id = (SELECT refresh_id FROM rome_transport.gold.analytics_refresh_metadata WHERE quality_status='PASSED' AND dashboard_ready='YES'))"
       ]
     },
     {
@@ -55,25 +55,25 @@
         "  'Median' AS percentile,\n",
         "  median_realized_delay_seconds AS `Delay Seconds`\n",
         "FROM\n",
-        "  rome_transport.gold.executive_overview\n",
+        "  (SELECT ops_observation_count AS `total_observations`, ops_distinct_snapshots AS `distinct_snapshots`, ops_distinct_service_dates AS `distinct_service_dates`, ops_distinct_routes AS `distinct_routes`, ops_distinct_trips AS `distinct_trips`, ops_distinct_vehicles AS `distinct_vehicles`, ops_mean_delay_seconds AS `mean_realized_delay_seconds`, ops_median_delay_seconds AS `median_realized_delay_seconds`, ops_p90_delay_seconds AS `p90_realized_delay_seconds`, ops_p95_delay_seconds AS `p95_realized_delay_seconds`, ops_p99_delay_seconds AS `p99_realized_delay_seconds`, ops_major_delay_count AS `major_delay_count`, ops_major_delay_rate AS `major_delay_rate`, ops_early_count AS `early_count`, ops_early_rate AS `early_rate`, ops_on_time_count AS `on_time_count`, ops_on_time_rate AS `on_time_rate`, ops_moderate_delay_count AS `moderate_delay_count`, ops_moderate_delay_rate AS `moderate_delay_rate`, `latest_prediction_feed_timestamp` AS `latest_prediction_feed_timestamp`, `latest_prediction_feed_datetime` AS `latest_prediction_feed_datetime`, `latest_scored_rows` AS `latest_scored_rows`, `latest_predicted_major_delay_count` AS `latest_predicted_major_delay_count`, `latest_predicted_major_delay_rate` AS `latest_predicted_major_delay_rate`, `latest_probability_mean` AS `latest_probability_mean`, `latest_probability_p90` AS `latest_probability_p90`, `latest_probability_p95` AS `latest_probability_p95`, `latest_probability_p99` AS `latest_probability_p99` FROM rome_transport.gold.executive_overview WHERE ops_observation_count IS NOT NULL AND ops_release_id = (SELECT refresh_id FROM rome_transport.gold.analytics_refresh_metadata WHERE quality_status='PASSED' AND dashboard_ready='YES'))\n",
         "UNION ALL\n",
         "SELECT\n",
         "  'P90' AS percentile,\n",
         "  p90_realized_delay_seconds AS `Delay Seconds`\n",
         "FROM\n",
-        "  rome_transport.gold.executive_overview\n",
+        "  (SELECT ops_observation_count AS `total_observations`, ops_distinct_snapshots AS `distinct_snapshots`, ops_distinct_service_dates AS `distinct_service_dates`, ops_distinct_routes AS `distinct_routes`, ops_distinct_trips AS `distinct_trips`, ops_distinct_vehicles AS `distinct_vehicles`, ops_mean_delay_seconds AS `mean_realized_delay_seconds`, ops_median_delay_seconds AS `median_realized_delay_seconds`, ops_p90_delay_seconds AS `p90_realized_delay_seconds`, ops_p95_delay_seconds AS `p95_realized_delay_seconds`, ops_p99_delay_seconds AS `p99_realized_delay_seconds`, ops_major_delay_count AS `major_delay_count`, ops_major_delay_rate AS `major_delay_rate`, ops_early_count AS `early_count`, ops_early_rate AS `early_rate`, ops_on_time_count AS `on_time_count`, ops_on_time_rate AS `on_time_rate`, ops_moderate_delay_count AS `moderate_delay_count`, ops_moderate_delay_rate AS `moderate_delay_rate`, `latest_prediction_feed_timestamp` AS `latest_prediction_feed_timestamp`, `latest_prediction_feed_datetime` AS `latest_prediction_feed_datetime`, `latest_scored_rows` AS `latest_scored_rows`, `latest_predicted_major_delay_count` AS `latest_predicted_major_delay_count`, `latest_predicted_major_delay_rate` AS `latest_predicted_major_delay_rate`, `latest_probability_mean` AS `latest_probability_mean`, `latest_probability_p90` AS `latest_probability_p90`, `latest_probability_p95` AS `latest_probability_p95`, `latest_probability_p99` AS `latest_probability_p99` FROM rome_transport.gold.executive_overview WHERE ops_observation_count IS NOT NULL AND ops_release_id = (SELECT refresh_id FROM rome_transport.gold.analytics_refresh_metadata WHERE quality_status='PASSED' AND dashboard_ready='YES'))\n",
         "UNION ALL\n",
         "SELECT\n",
         "  'P95' AS percentile,\n",
         "  p95_realized_delay_seconds AS `Delay Seconds`\n",
         "FROM\n",
-        "  rome_transport.gold.executive_overview\n",
+        "  (SELECT ops_observation_count AS `total_observations`, ops_distinct_snapshots AS `distinct_snapshots`, ops_distinct_service_dates AS `distinct_service_dates`, ops_distinct_routes AS `distinct_routes`, ops_distinct_trips AS `distinct_trips`, ops_distinct_vehicles AS `distinct_vehicles`, ops_mean_delay_seconds AS `mean_realized_delay_seconds`, ops_median_delay_seconds AS `median_realized_delay_seconds`, ops_p90_delay_seconds AS `p90_realized_delay_seconds`, ops_p95_delay_seconds AS `p95_realized_delay_seconds`, ops_p99_delay_seconds AS `p99_realized_delay_seconds`, ops_major_delay_count AS `major_delay_count`, ops_major_delay_rate AS `major_delay_rate`, ops_early_count AS `early_count`, ops_early_rate AS `early_rate`, ops_on_time_count AS `on_time_count`, ops_on_time_rate AS `on_time_rate`, ops_moderate_delay_count AS `moderate_delay_count`, ops_moderate_delay_rate AS `moderate_delay_rate`, `latest_prediction_feed_timestamp` AS `latest_prediction_feed_timestamp`, `latest_prediction_feed_datetime` AS `latest_prediction_feed_datetime`, `latest_scored_rows` AS `latest_scored_rows`, `latest_predicted_major_delay_count` AS `latest_predicted_major_delay_count`, `latest_predicted_major_delay_rate` AS `latest_predicted_major_delay_rate`, `latest_probability_mean` AS `latest_probability_mean`, `latest_probability_p90` AS `latest_probability_p90`, `latest_probability_p95` AS `latest_probability_p95`, `latest_probability_p99` AS `latest_probability_p99` FROM rome_transport.gold.executive_overview WHERE ops_observation_count IS NOT NULL AND ops_release_id = (SELECT refresh_id FROM rome_transport.gold.analytics_refresh_metadata WHERE quality_status='PASSED' AND dashboard_ready='YES'))\n",
         "UNION ALL\n",
         "SELECT\n",
         "  'P99' AS percentile,\n",
         "  p99_realized_delay_seconds AS `Delay Seconds`\n",
         "FROM\n",
-        "  rome_transport.gold.executive_overview"
+        "  (SELECT ops_observation_count AS `total_observations`, ops_distinct_snapshots AS `distinct_snapshots`, ops_distinct_service_dates AS `distinct_service_dates`, ops_distinct_routes AS `distinct_routes`, ops_distinct_trips AS `distinct_trips`, ops_distinct_vehicles AS `distinct_vehicles`, ops_mean_delay_seconds AS `mean_realized_delay_seconds`, ops_median_delay_seconds AS `median_realized_delay_seconds`, ops_p90_delay_seconds AS `p90_realized_delay_seconds`, ops_p95_delay_seconds AS `p95_realized_delay_seconds`, ops_p99_delay_seconds AS `p99_realized_delay_seconds`, ops_major_delay_count AS `major_delay_count`, ops_major_delay_rate AS `major_delay_rate`, ops_early_count AS `early_count`, ops_early_rate AS `early_rate`, ops_on_time_count AS `on_time_count`, ops_on_time_rate AS `on_time_rate`, ops_moderate_delay_count AS `moderate_delay_count`, ops_moderate_delay_rate AS `moderate_delay_rate`, `latest_prediction_feed_timestamp` AS `latest_prediction_feed_timestamp`, `latest_prediction_feed_datetime` AS `latest_prediction_feed_datetime`, `latest_scored_rows` AS `latest_scored_rows`, `latest_predicted_major_delay_count` AS `latest_predicted_major_delay_count`, `latest_predicted_major_delay_rate` AS `latest_predicted_major_delay_rate`, `latest_probability_mean` AS `latest_probability_mean`, `latest_probability_p90` AS `latest_probability_p90`, `latest_probability_p95` AS `latest_probability_p95`, `latest_probability_p99` AS `latest_probability_p99` FROM rome_transport.gold.executive_overview WHERE ops_observation_count IS NOT NULL AND ops_release_id = (SELECT refresh_id FROM rome_transport.gold.analytics_refresh_metadata WHERE quality_status='PASSED' AND dashboard_ready='YES'))"
       ]
     },
     {
@@ -85,28 +85,28 @@
         "  'In Anticipo' AS `Stato del Ritardo`,\n",
         "  early_rate AS `Share of Observations`\n",
         "FROM\n",
-        "  rome_transport.gold.executive_overview\n",
+        "  (SELECT ops_observation_count AS `total_observations`, ops_distinct_snapshots AS `distinct_snapshots`, ops_distinct_service_dates AS `distinct_service_dates`, ops_distinct_routes AS `distinct_routes`, ops_distinct_trips AS `distinct_trips`, ops_distinct_vehicles AS `distinct_vehicles`, ops_mean_delay_seconds AS `mean_realized_delay_seconds`, ops_median_delay_seconds AS `median_realized_delay_seconds`, ops_p90_delay_seconds AS `p90_realized_delay_seconds`, ops_p95_delay_seconds AS `p95_realized_delay_seconds`, ops_p99_delay_seconds AS `p99_realized_delay_seconds`, ops_major_delay_count AS `major_delay_count`, ops_major_delay_rate AS `major_delay_rate`, ops_early_count AS `early_count`, ops_early_rate AS `early_rate`, ops_on_time_count AS `on_time_count`, ops_on_time_rate AS `on_time_rate`, ops_moderate_delay_count AS `moderate_delay_count`, ops_moderate_delay_rate AS `moderate_delay_rate`, `latest_prediction_feed_timestamp` AS `latest_prediction_feed_timestamp`, `latest_prediction_feed_datetime` AS `latest_prediction_feed_datetime`, `latest_scored_rows` AS `latest_scored_rows`, `latest_predicted_major_delay_count` AS `latest_predicted_major_delay_count`, `latest_predicted_major_delay_rate` AS `latest_predicted_major_delay_rate`, `latest_probability_mean` AS `latest_probability_mean`, `latest_probability_p90` AS `latest_probability_p90`, `latest_probability_p95` AS `latest_probability_p95`, `latest_probability_p99` AS `latest_probability_p99` FROM rome_transport.gold.executive_overview WHERE ops_observation_count IS NOT NULL AND ops_release_id = (SELECT refresh_id FROM rome_transport.gold.analytics_refresh_metadata WHERE quality_status='PASSED' AND dashboard_ready='YES'))\n",
         "UNION ALL\n",
         "SELECT\n",
         "  'On Time' AS `Delay Status`,\n",
         "  'Regolare' AS `Stato del Ritardo`,\n",
         "  on_time_rate AS `Share of Observations`\n",
         "FROM\n",
-        "  rome_transport.gold.executive_overview\n",
+        "  (SELECT ops_observation_count AS `total_observations`, ops_distinct_snapshots AS `distinct_snapshots`, ops_distinct_service_dates AS `distinct_service_dates`, ops_distinct_routes AS `distinct_routes`, ops_distinct_trips AS `distinct_trips`, ops_distinct_vehicles AS `distinct_vehicles`, ops_mean_delay_seconds AS `mean_realized_delay_seconds`, ops_median_delay_seconds AS `median_realized_delay_seconds`, ops_p90_delay_seconds AS `p90_realized_delay_seconds`, ops_p95_delay_seconds AS `p95_realized_delay_seconds`, ops_p99_delay_seconds AS `p99_realized_delay_seconds`, ops_major_delay_count AS `major_delay_count`, ops_major_delay_rate AS `major_delay_rate`, ops_early_count AS `early_count`, ops_early_rate AS `early_rate`, ops_on_time_count AS `on_time_count`, ops_on_time_rate AS `on_time_rate`, ops_moderate_delay_count AS `moderate_delay_count`, ops_moderate_delay_rate AS `moderate_delay_rate`, `latest_prediction_feed_timestamp` AS `latest_prediction_feed_timestamp`, `latest_prediction_feed_datetime` AS `latest_prediction_feed_datetime`, `latest_scored_rows` AS `latest_scored_rows`, `latest_predicted_major_delay_count` AS `latest_predicted_major_delay_count`, `latest_predicted_major_delay_rate` AS `latest_predicted_major_delay_rate`, `latest_probability_mean` AS `latest_probability_mean`, `latest_probability_p90` AS `latest_probability_p90`, `latest_probability_p95` AS `latest_probability_p95`, `latest_probability_p99` AS `latest_probability_p99` FROM rome_transport.gold.executive_overview WHERE ops_observation_count IS NOT NULL AND ops_release_id = (SELECT refresh_id FROM rome_transport.gold.analytics_refresh_metadata WHERE quality_status='PASSED' AND dashboard_ready='YES'))\n",
         "UNION ALL\n",
         "SELECT\n",
         "  'Moderate Delay' AS `Delay Status`,\n",
         "  'Ritardo Moderato' AS `Stato del Ritardo`,\n",
         "  moderate_delay_rate AS `Share of Observations`\n",
         "FROM\n",
-        "  rome_transport.gold.executive_overview\n",
+        "  (SELECT ops_observation_count AS `total_observations`, ops_distinct_snapshots AS `distinct_snapshots`, ops_distinct_service_dates AS `distinct_service_dates`, ops_distinct_routes AS `distinct_routes`, ops_distinct_trips AS `distinct_trips`, ops_distinct_vehicles AS `distinct_vehicles`, ops_mean_delay_seconds AS `mean_realized_delay_seconds`, ops_median_delay_seconds AS `median_realized_delay_seconds`, ops_p90_delay_seconds AS `p90_realized_delay_seconds`, ops_p95_delay_seconds AS `p95_realized_delay_seconds`, ops_p99_delay_seconds AS `p99_realized_delay_seconds`, ops_major_delay_count AS `major_delay_count`, ops_major_delay_rate AS `major_delay_rate`, ops_early_count AS `early_count`, ops_early_rate AS `early_rate`, ops_on_time_count AS `on_time_count`, ops_on_time_rate AS `on_time_rate`, ops_moderate_delay_count AS `moderate_delay_count`, ops_moderate_delay_rate AS `moderate_delay_rate`, `latest_prediction_feed_timestamp` AS `latest_prediction_feed_timestamp`, `latest_prediction_feed_datetime` AS `latest_prediction_feed_datetime`, `latest_scored_rows` AS `latest_scored_rows`, `latest_predicted_major_delay_count` AS `latest_predicted_major_delay_count`, `latest_predicted_major_delay_rate` AS `latest_predicted_major_delay_rate`, `latest_probability_mean` AS `latest_probability_mean`, `latest_probability_p90` AS `latest_probability_p90`, `latest_probability_p95` AS `latest_probability_p95`, `latest_probability_p99` AS `latest_probability_p99` FROM rome_transport.gold.executive_overview WHERE ops_observation_count IS NOT NULL AND ops_release_id = (SELECT refresh_id FROM rome_transport.gold.analytics_refresh_metadata WHERE quality_status='PASSED' AND dashboard_ready='YES'))\n",
         "UNION ALL\n",
         "SELECT\n",
         "  'Major Delay' AS `Delay Status`,\n",
         "  'Ritardo ≥ 5 min' AS `Stato del Ritardo`,\n",
         "  major_delay_rate AS `Share of Observations`\n",
         "FROM\n",
-        "  rome_transport.gold.executive_overview"
+        "  (SELECT ops_observation_count AS `total_observations`, ops_distinct_snapshots AS `distinct_snapshots`, ops_distinct_service_dates AS `distinct_service_dates`, ops_distinct_routes AS `distinct_routes`, ops_distinct_trips AS `distinct_trips`, ops_distinct_vehicles AS `distinct_vehicles`, ops_mean_delay_seconds AS `mean_realized_delay_seconds`, ops_median_delay_seconds AS `median_realized_delay_seconds`, ops_p90_delay_seconds AS `p90_realized_delay_seconds`, ops_p95_delay_seconds AS `p95_realized_delay_seconds`, ops_p99_delay_seconds AS `p99_realized_delay_seconds`, ops_major_delay_count AS `major_delay_count`, ops_major_delay_rate AS `major_delay_rate`, ops_early_count AS `early_count`, ops_early_rate AS `early_rate`, ops_on_time_count AS `on_time_count`, ops_on_time_rate AS `on_time_rate`, ops_moderate_delay_count AS `moderate_delay_count`, ops_moderate_delay_rate AS `moderate_delay_rate`, `latest_prediction_feed_timestamp` AS `latest_prediction_feed_timestamp`, `latest_prediction_feed_datetime` AS `latest_prediction_feed_datetime`, `latest_scored_rows` AS `latest_scored_rows`, `latest_predicted_major_delay_count` AS `latest_predicted_major_delay_count`, `latest_predicted_major_delay_rate` AS `latest_predicted_major_delay_rate`, `latest_probability_mean` AS `latest_probability_mean`, `latest_probability_p90` AS `latest_probability_p90`, `latest_probability_p95` AS `latest_probability_p95`, `latest_probability_p99` AS `latest_probability_p99` FROM rome_transport.gold.executive_overview WHERE ops_observation_count IS NOT NULL AND ops_release_id = (SELECT refresh_id FROM rome_transport.gold.analytics_refresh_metadata WHERE quality_status='PASSED' AND dashboard_ready='YES'))"
       ]
     },
     {
@@ -117,77 +117,50 @@
         "  'Snapshot' AS metric,\n",
         "  CAST(distinct_snapshots AS DOUBLE) AS count\n",
         "FROM\n",
-        "  rome_transport.gold.executive_overview\n",
+        "  (SELECT ops_observation_count AS `total_observations`, ops_distinct_snapshots AS `distinct_snapshots`, ops_distinct_service_dates AS `distinct_service_dates`, ops_distinct_routes AS `distinct_routes`, ops_distinct_trips AS `distinct_trips`, ops_distinct_vehicles AS `distinct_vehicles`, ops_mean_delay_seconds AS `mean_realized_delay_seconds`, ops_median_delay_seconds AS `median_realized_delay_seconds`, ops_p90_delay_seconds AS `p90_realized_delay_seconds`, ops_p95_delay_seconds AS `p95_realized_delay_seconds`, ops_p99_delay_seconds AS `p99_realized_delay_seconds`, ops_major_delay_count AS `major_delay_count`, ops_major_delay_rate AS `major_delay_rate`, ops_early_count AS `early_count`, ops_early_rate AS `early_rate`, ops_on_time_count AS `on_time_count`, ops_on_time_rate AS `on_time_rate`, ops_moderate_delay_count AS `moderate_delay_count`, ops_moderate_delay_rate AS `moderate_delay_rate`, `latest_prediction_feed_timestamp` AS `latest_prediction_feed_timestamp`, `latest_prediction_feed_datetime` AS `latest_prediction_feed_datetime`, `latest_scored_rows` AS `latest_scored_rows`, `latest_predicted_major_delay_count` AS `latest_predicted_major_delay_count`, `latest_predicted_major_delay_rate` AS `latest_predicted_major_delay_rate`, `latest_probability_mean` AS `latest_probability_mean`, `latest_probability_p90` AS `latest_probability_p90`, `latest_probability_p95` AS `latest_probability_p95`, `latest_probability_p99` AS `latest_probability_p99` FROM rome_transport.gold.executive_overview WHERE ops_observation_count IS NOT NULL AND ops_release_id = (SELECT refresh_id FROM rome_transport.gold.analytics_refresh_metadata WHERE quality_status='PASSED' AND dashboard_ready='YES'))\n",
         "UNION ALL\n",
         "SELECT\n",
         "  'Giorni di Servizio' AS metric,\n",
         "  CAST(distinct_service_dates AS DOUBLE) AS count\n",
         "FROM\n",
-        "  rome_transport.gold.executive_overview\n",
+        "  (SELECT ops_observation_count AS `total_observations`, ops_distinct_snapshots AS `distinct_snapshots`, ops_distinct_service_dates AS `distinct_service_dates`, ops_distinct_routes AS `distinct_routes`, ops_distinct_trips AS `distinct_trips`, ops_distinct_vehicles AS `distinct_vehicles`, ops_mean_delay_seconds AS `mean_realized_delay_seconds`, ops_median_delay_seconds AS `median_realized_delay_seconds`, ops_p90_delay_seconds AS `p90_realized_delay_seconds`, ops_p95_delay_seconds AS `p95_realized_delay_seconds`, ops_p99_delay_seconds AS `p99_realized_delay_seconds`, ops_major_delay_count AS `major_delay_count`, ops_major_delay_rate AS `major_delay_rate`, ops_early_count AS `early_count`, ops_early_rate AS `early_rate`, ops_on_time_count AS `on_time_count`, ops_on_time_rate AS `on_time_rate`, ops_moderate_delay_count AS `moderate_delay_count`, ops_moderate_delay_rate AS `moderate_delay_rate`, `latest_prediction_feed_timestamp` AS `latest_prediction_feed_timestamp`, `latest_prediction_feed_datetime` AS `latest_prediction_feed_datetime`, `latest_scored_rows` AS `latest_scored_rows`, `latest_predicted_major_delay_count` AS `latest_predicted_major_delay_count`, `latest_predicted_major_delay_rate` AS `latest_predicted_major_delay_rate`, `latest_probability_mean` AS `latest_probability_mean`, `latest_probability_p90` AS `latest_probability_p90`, `latest_probability_p95` AS `latest_probability_p95`, `latest_probability_p99` AS `latest_probability_p99` FROM rome_transport.gold.executive_overview WHERE ops_observation_count IS NOT NULL AND ops_release_id = (SELECT refresh_id FROM rome_transport.gold.analytics_refresh_metadata WHERE quality_status='PASSED' AND dashboard_ready='YES'))\n",
         "UNION ALL\n",
         "SELECT\n",
         "  'Linee' AS metric,\n",
         "  CAST(distinct_routes AS DOUBLE) AS count\n",
         "FROM\n",
-        "  rome_transport.gold.executive_overview\n",
+        "  (SELECT ops_observation_count AS `total_observations`, ops_distinct_snapshots AS `distinct_snapshots`, ops_distinct_service_dates AS `distinct_service_dates`, ops_distinct_routes AS `distinct_routes`, ops_distinct_trips AS `distinct_trips`, ops_distinct_vehicles AS `distinct_vehicles`, ops_mean_delay_seconds AS `mean_realized_delay_seconds`, ops_median_delay_seconds AS `median_realized_delay_seconds`, ops_p90_delay_seconds AS `p90_realized_delay_seconds`, ops_p95_delay_seconds AS `p95_realized_delay_seconds`, ops_p99_delay_seconds AS `p99_realized_delay_seconds`, ops_major_delay_count AS `major_delay_count`, ops_major_delay_rate AS `major_delay_rate`, ops_early_count AS `early_count`, ops_early_rate AS `early_rate`, ops_on_time_count AS `on_time_count`, ops_on_time_rate AS `on_time_rate`, ops_moderate_delay_count AS `moderate_delay_count`, ops_moderate_delay_rate AS `moderate_delay_rate`, `latest_prediction_feed_timestamp` AS `latest_prediction_feed_timestamp`, `latest_prediction_feed_datetime` AS `latest_prediction_feed_datetime`, `latest_scored_rows` AS `latest_scored_rows`, `latest_predicted_major_delay_count` AS `latest_predicted_major_delay_count`, `latest_predicted_major_delay_rate` AS `latest_predicted_major_delay_rate`, `latest_probability_mean` AS `latest_probability_mean`, `latest_probability_p90` AS `latest_probability_p90`, `latest_probability_p95` AS `latest_probability_p95`, `latest_probability_p99` AS `latest_probability_p99` FROM rome_transport.gold.executive_overview WHERE ops_observation_count IS NOT NULL AND ops_release_id = (SELECT refresh_id FROM rome_transport.gold.analytics_refresh_metadata WHERE quality_status='PASSED' AND dashboard_ready='YES'))\n",
         "UNION ALL\n",
         "SELECT\n",
         "  'Corse' AS metric,\n",
         "  CAST(distinct_trips AS DOUBLE) AS count\n",
         "FROM\n",
-        "  rome_transport.gold.executive_overview\n",
+        "  (SELECT ops_observation_count AS `total_observations`, ops_distinct_snapshots AS `distinct_snapshots`, ops_distinct_service_dates AS `distinct_service_dates`, ops_distinct_routes AS `distinct_routes`, ops_distinct_trips AS `distinct_trips`, ops_distinct_vehicles AS `distinct_vehicles`, ops_mean_delay_seconds AS `mean_realized_delay_seconds`, ops_median_delay_seconds AS `median_realized_delay_seconds`, ops_p90_delay_seconds AS `p90_realized_delay_seconds`, ops_p95_delay_seconds AS `p95_realized_delay_seconds`, ops_p99_delay_seconds AS `p99_realized_delay_seconds`, ops_major_delay_count AS `major_delay_count`, ops_major_delay_rate AS `major_delay_rate`, ops_early_count AS `early_count`, ops_early_rate AS `early_rate`, ops_on_time_count AS `on_time_count`, ops_on_time_rate AS `on_time_rate`, ops_moderate_delay_count AS `moderate_delay_count`, ops_moderate_delay_rate AS `moderate_delay_rate`, `latest_prediction_feed_timestamp` AS `latest_prediction_feed_timestamp`, `latest_prediction_feed_datetime` AS `latest_prediction_feed_datetime`, `latest_scored_rows` AS `latest_scored_rows`, `latest_predicted_major_delay_count` AS `latest_predicted_major_delay_count`, `latest_predicted_major_delay_rate` AS `latest_predicted_major_delay_rate`, `latest_probability_mean` AS `latest_probability_mean`, `latest_probability_p90` AS `latest_probability_p90`, `latest_probability_p95` AS `latest_probability_p95`, `latest_probability_p99` AS `latest_probability_p99` FROM rome_transport.gold.executive_overview WHERE ops_observation_count IS NOT NULL AND ops_release_id = (SELECT refresh_id FROM rome_transport.gold.analytics_refresh_metadata WHERE quality_status='PASSED' AND dashboard_ready='YES'))\n",
         "UNION ALL\n",
         "SELECT\n",
         "  'Veicoli' AS metric,\n",
         "  CAST(distinct_vehicles AS DOUBLE) AS count\n",
         "FROM\n",
-        "  rome_transport.gold.executive_overview"
+        "  (SELECT ops_observation_count AS `total_observations`, ops_distinct_snapshots AS `distinct_snapshots`, ops_distinct_service_dates AS `distinct_service_dates`, ops_distinct_routes AS `distinct_routes`, ops_distinct_trips AS `distinct_trips`, ops_distinct_vehicles AS `distinct_vehicles`, ops_mean_delay_seconds AS `mean_realized_delay_seconds`, ops_median_delay_seconds AS `median_realized_delay_seconds`, ops_p90_delay_seconds AS `p90_realized_delay_seconds`, ops_p95_delay_seconds AS `p95_realized_delay_seconds`, ops_p99_delay_seconds AS `p99_realized_delay_seconds`, ops_major_delay_count AS `major_delay_count`, ops_major_delay_rate AS `major_delay_rate`, ops_early_count AS `early_count`, ops_early_rate AS `early_rate`, ops_on_time_count AS `on_time_count`, ops_on_time_rate AS `on_time_rate`, ops_moderate_delay_count AS `moderate_delay_count`, ops_moderate_delay_rate AS `moderate_delay_rate`, `latest_prediction_feed_timestamp` AS `latest_prediction_feed_timestamp`, `latest_prediction_feed_datetime` AS `latest_prediction_feed_datetime`, `latest_scored_rows` AS `latest_scored_rows`, `latest_predicted_major_delay_count` AS `latest_predicted_major_delay_count`, `latest_predicted_major_delay_rate` AS `latest_predicted_major_delay_rate`, `latest_probability_mean` AS `latest_probability_mean`, `latest_probability_p90` AS `latest_probability_p90`, `latest_probability_p95` AS `latest_probability_p95`, `latest_probability_p99` AS `latest_probability_p99` FROM rome_transport.gold.executive_overview WHERE ops_observation_count IS NOT NULL AND ops_release_id = (SELECT refresh_id FROM rome_transport.gold.analytics_refresh_metadata WHERE quality_status='PASSED' AND dashboard_ready='YES'))"
       ]
     },
     {
       "name": "data_freshness",
       "displayName": "Data Freshness",
       "queryLines": [
-        "SELECT\n",
-        "  'Ultimo Snapshot Predittivo' AS metric,\n",
-        "  date_format(eo.latest_prediction_feed_datetime, 'dd MMM yyyy HH:mm') AS value\n",
-        "FROM\n",
-        "  rome_transport.gold.executive_overview eo\n",
-        "    CROSS JOIN rome_transport.gold.analytics_refresh_metadata arm\n",
-        "UNION ALL\n",
-        "SELECT\n",
-        "  'Ultimo Aggiornamento Gold' AS metric,\n",
-        "  date_format(arm.refresh_timestamp, 'dd MMM yyyy HH:mm') AS value\n",
-        "FROM\n",
-        "  rome_transport.gold.executive_overview eo\n",
-        "    CROSS JOIN rome_transport.gold.analytics_refresh_metadata arm\n",
-        "UNION ALL\n",
-        "SELECT\n",
-        "  'Elaborazione Predizioni' AS metric,\n",
-        "  date_format(arm.prediction_scored_at, 'dd MMM yyyy HH:mm') AS value\n",
-        "FROM\n",
-        "  rome_transport.gold.executive_overview eo\n",
-        "    CROSS JOIN rome_transport.gold.analytics_refresh_metadata arm\n",
-        "UNION ALL\n",
-        "SELECT\n",
-        "  'Stato Qualità' AS metric,\n",
-        "  CASE\n",
-        "    WHEN lower(arm.quality_status) LIKE '%pass%' THEN 'Superato'\n",
-        "    ELSE arm.quality_status\n",
-        "  END AS value\n",
-        "FROM\n",
-        "  rome_transport.gold.executive_overview eo\n",
-        "    CROSS JOIN rome_transport.gold.analytics_refresh_metadata arm\n",
-        "UNION ALL\n",
-        "SELECT\n",
-        "  'Stato Registro Modelli' AS metric,\n",
-        "  CASE\n",
-        "    WHEN lower(arm.registration_status) LIKE '%defer%' THEN 'Differito'\n",
-        "    ELSE arm.registration_status\n",
-        "  END AS value\n",
-        "FROM\n",
-        "  rome_transport.gold.executive_overview eo\n",
-        "    CROSS JOIN rome_transport.gold.analytics_refresh_metadata arm"
+        "SELECT 'Ultimo Feed Operativo' AS metric,\n",
+        " date_format(from_utc_timestamp(timestamp_seconds(ops_latest_feed_timestamp),'Europe/Rome'),'dd MMM yyyy HH:mm') AS value\n",
+        " FROM rome_transport.gold.analytics_refresh_metadata\n",
+        " UNION ALL SELECT 'Ultimo Aggiornamento Gold',\n",
+        " date_format(from_utc_timestamp(refresh_timestamp,'Europe/Rome'),'dd MMM yyyy HH:mm')\n",
+        " FROM rome_transport.gold.analytics_refresh_metadata\n",
+        " UNION ALL SELECT 'Età Feed Operativo',\n",
+        " concat(cast(cast((unix_timestamp(current_timestamp())-ops_latest_feed_timestamp)/60 AS BIGINT) AS STRING),' min')\n",
+        " FROM rome_transport.gold.analytics_refresh_metadata\n",
+        " UNION ALL SELECT 'Stato Qualità', quality_status\n",
+        " FROM rome_transport.gold.analytics_refresh_metadata\n",
+        " UNION ALL SELECT 'Stato Registro Modelli', registration_status\n",
+        " FROM rome_transport.gold.analytics_refresh_metadata"
       ]
     },
     {
@@ -214,7 +187,7 @@
         "  major_delay_rate_rank_desc,\n",
         "  p95_delay_rank_desc\n",
         "FROM\n",
-        "  rome_transport.gold.stop_reliability\n",
+        "  (SELECT `stop_id` AS `stop_id`, coalesce(ops_stop_name,stop_name,stop_id) AS `stop_name`, ops_distinct_routes AS `distinct_routes`, ops_distinct_trips AS `distinct_trips`, ops_distinct_service_dates AS `service_date_count`, ops_known_delay_count AS `observation_count`, ops_mean_delay_seconds AS `mean_delay_seconds`, ops_median_delay_seconds AS `median_delay_seconds`, ops_p90_delay_seconds AS `p90_delay_seconds`, ops_p95_delay_seconds AS `p95_delay_seconds`, ops_p99_delay_seconds AS `p99_delay_seconds`, ops_major_delay_count AS `major_delay_count`, ops_major_delay_rate AS `major_delay_rate`, ops_early_count AS `early_count`, ops_early_rate AS `early_rate`, ops_on_time_count AS `on_time_count`, ops_on_time_rate AS `on_time_rate`, ops_moderate_delay_count AS `moderate_delay_count`, ops_moderate_delay_rate AS `moderate_delay_rate`, ops_ranking_eligible AS `ranking_eligible`, ops_major_delay_rate_rank_desc AS `major_delay_rate_rank_desc`, ops_p95_delay_rank_desc AS `p95_delay_rank_desc` FROM rome_transport.gold.stop_reliability WHERE ops_observation_count IS NOT NULL AND ops_release_id = (SELECT refresh_id FROM rome_transport.gold.analytics_refresh_metadata WHERE quality_status='PASSED' AND dashboard_ready='YES'))\n",
         "WHERE\n",
         "  observation_count >= 500"
       ]
@@ -289,7 +262,7 @@
         "      on_time_rate,\n",
         "      moderate_delay_rate\n",
         "    FROM\n",
-        "      rome_transport.gold.temporal_reliability\n",
+        "      (SELECT `service_date` AS `service_date`, `day_of_week` AS `day_of_week`, `feed_hour` AS `feed_hour`, day_of_week IN (6,7) AS `is_weekend`, CASE WHEN feed_hour<6 THEN 'night' WHEN feed_hour<10 THEN 'morning_peak' WHEN feed_hour<16 THEN 'midday' WHEN feed_hour<20 THEN 'evening_peak' ELSE 'evening' END AS `time_band`, ops_known_delay_count AS `observation_count`, ops_mean_delay_seconds AS `mean_delay_seconds`, ops_median_delay_seconds AS `median_delay_seconds`, ops_p90_delay_seconds AS `p90_delay_seconds`, ops_p95_delay_seconds AS `p95_delay_seconds`, ops_p99_delay_seconds AS `p99_delay_seconds`, ops_major_delay_count AS `major_delay_count`, ops_major_delay_rate AS `major_delay_rate`, ops_early_count AS `early_count`, ops_early_rate AS `early_rate`, ops_on_time_count AS `on_time_count`, ops_on_time_rate AS `on_time_rate`, ops_moderate_delay_count AS `moderate_delay_count`, ops_moderate_delay_rate AS `moderate_delay_rate` FROM rome_transport.gold.temporal_reliability WHERE ops_observation_count IS NOT NULL AND ops_release_id = (SELECT refresh_id FROM rome_transport.gold.analytics_refresh_metadata WHERE quality_status='PASSED' AND dashboard_ready='YES'))\n",
         "  ) t"
       ]
     },
@@ -318,7 +291,7 @@
         "  mean_delay_rank_desc,\n",
         "  p95_delay_rank_desc\n",
         "FROM\n",
-        "  rome_transport.gold.route_reliability\n",
+        "  (SELECT `route_id` AS `route_id`, coalesce(ops_route_short_name,route_short_name,route_id) AS `route_short_name`, ops_distinct_trips AS `trip_count`, ops_distinct_stops AS `stop_count`, ops_distinct_service_dates AS `service_date_count`, ops_known_delay_count AS `observation_count`, ops_mean_delay_seconds AS `mean_delay_seconds`, ops_median_delay_seconds AS `median_delay_seconds`, ops_p90_delay_seconds AS `p90_delay_seconds`, ops_p95_delay_seconds AS `p95_delay_seconds`, ops_p99_delay_seconds AS `p99_delay_seconds`, ops_major_delay_count AS `major_delay_count`, ops_major_delay_rate AS `major_delay_rate`, ops_early_count AS `early_count`, ops_early_rate AS `early_rate`, ops_on_time_count AS `on_time_count`, ops_on_time_rate AS `on_time_rate`, ops_moderate_delay_count AS `moderate_delay_count`, ops_moderate_delay_rate AS `moderate_delay_rate`, ops_ranking_eligible AS `ranking_eligible`, ops_major_delay_rate_rank_desc AS `major_delay_rate_rank_desc`, ops_mean_delay_rank_desc AS `mean_delay_rank_desc`, ops_p95_delay_rank_desc AS `p95_delay_rank_desc` FROM rome_transport.gold.route_reliability WHERE ops_observation_count IS NOT NULL AND ops_release_id = (SELECT refresh_id FROM rome_transport.gold.analytics_refresh_metadata WHERE quality_status='PASSED' AND dashboard_ready='YES'))\n",
         "WHERE\n",
         "  observation_count >= 1000"
       ]
@@ -332,7 +305,7 @@
         "  route_id AS identifier,\n",
         "  CONCAT(CAST(ROUND(major_delay_rate * 100, 1) AS STRING), '%') AS value\n",
         "FROM\n",
-        "  rome_transport.gold.route_reliability\n",
+        "  (SELECT `route_id` AS `route_id`, coalesce(ops_route_short_name,route_short_name,route_id) AS `route_short_name`, ops_distinct_trips AS `trip_count`, ops_distinct_stops AS `stop_count`, ops_distinct_service_dates AS `service_date_count`, ops_known_delay_count AS `observation_count`, ops_mean_delay_seconds AS `mean_delay_seconds`, ops_median_delay_seconds AS `median_delay_seconds`, ops_p90_delay_seconds AS `p90_delay_seconds`, ops_p95_delay_seconds AS `p95_delay_seconds`, ops_p99_delay_seconds AS `p99_delay_seconds`, ops_major_delay_count AS `major_delay_count`, ops_major_delay_rate AS `major_delay_rate`, ops_early_count AS `early_count`, ops_early_rate AS `early_rate`, ops_on_time_count AS `on_time_count`, ops_on_time_rate AS `on_time_rate`, ops_moderate_delay_count AS `moderate_delay_count`, ops_moderate_delay_rate AS `moderate_delay_rate`, ops_ranking_eligible AS `ranking_eligible`, ops_major_delay_rate_rank_desc AS `major_delay_rate_rank_desc`, ops_mean_delay_rank_desc AS `mean_delay_rank_desc`, ops_p95_delay_rank_desc AS `p95_delay_rank_desc` FROM rome_transport.gold.route_reliability WHERE ops_observation_count IS NOT NULL AND ops_release_id = (SELECT refresh_id FROM rome_transport.gold.analytics_refresh_metadata WHERE quality_status='PASSED' AND dashboard_ready='YES'))\n",
         "WHERE\n",
         "  major_delay_rate_rank_desc = 1\n",
         "  AND observation_count >= 1000\n",
@@ -342,7 +315,7 @@
         "  route_id,\n",
         "  CONCAT(CAST(ROUND(mean_delay_seconds, 1) AS STRING), ' s')\n",
         "FROM\n",
-        "  rome_transport.gold.route_reliability\n",
+        "  (SELECT `route_id` AS `route_id`, coalesce(ops_route_short_name,route_short_name,route_id) AS `route_short_name`, ops_distinct_trips AS `trip_count`, ops_distinct_stops AS `stop_count`, ops_distinct_service_dates AS `service_date_count`, ops_known_delay_count AS `observation_count`, ops_mean_delay_seconds AS `mean_delay_seconds`, ops_median_delay_seconds AS `median_delay_seconds`, ops_p90_delay_seconds AS `p90_delay_seconds`, ops_p95_delay_seconds AS `p95_delay_seconds`, ops_p99_delay_seconds AS `p99_delay_seconds`, ops_major_delay_count AS `major_delay_count`, ops_major_delay_rate AS `major_delay_rate`, ops_early_count AS `early_count`, ops_early_rate AS `early_rate`, ops_on_time_count AS `on_time_count`, ops_on_time_rate AS `on_time_rate`, ops_moderate_delay_count AS `moderate_delay_count`, ops_moderate_delay_rate AS `moderate_delay_rate`, ops_ranking_eligible AS `ranking_eligible`, ops_major_delay_rate_rank_desc AS `major_delay_rate_rank_desc`, ops_mean_delay_rank_desc AS `mean_delay_rank_desc`, ops_p95_delay_rank_desc AS `p95_delay_rank_desc` FROM rome_transport.gold.route_reliability WHERE ops_observation_count IS NOT NULL AND ops_release_id = (SELECT refresh_id FROM rome_transport.gold.analytics_refresh_metadata WHERE quality_status='PASSED' AND dashboard_ready='YES'))\n",
         "WHERE\n",
         "  mean_delay_rank_desc = 1\n",
         "  AND observation_count >= 1000\n",
@@ -352,7 +325,7 @@
         "  stop_id,\n",
         "  CONCAT(CAST(ROUND(major_delay_rate * 100, 1) AS STRING), '%')\n",
         "FROM\n",
-        "  rome_transport.gold.stop_reliability\n",
+        "  (SELECT `stop_id` AS `stop_id`, coalesce(ops_stop_name,stop_name,stop_id) AS `stop_name`, ops_distinct_routes AS `distinct_routes`, ops_distinct_trips AS `distinct_trips`, ops_distinct_service_dates AS `service_date_count`, ops_known_delay_count AS `observation_count`, ops_mean_delay_seconds AS `mean_delay_seconds`, ops_median_delay_seconds AS `median_delay_seconds`, ops_p90_delay_seconds AS `p90_delay_seconds`, ops_p95_delay_seconds AS `p95_delay_seconds`, ops_p99_delay_seconds AS `p99_delay_seconds`, ops_major_delay_count AS `major_delay_count`, ops_major_delay_rate AS `major_delay_rate`, ops_early_count AS `early_count`, ops_early_rate AS `early_rate`, ops_on_time_count AS `on_time_count`, ops_on_time_rate AS `on_time_rate`, ops_moderate_delay_count AS `moderate_delay_count`, ops_moderate_delay_rate AS `moderate_delay_rate`, ops_ranking_eligible AS `ranking_eligible`, ops_major_delay_rate_rank_desc AS `major_delay_rate_rank_desc`, ops_p95_delay_rank_desc AS `p95_delay_rank_desc` FROM rome_transport.gold.stop_reliability WHERE ops_observation_count IS NOT NULL AND ops_release_id = (SELECT refresh_id FROM rome_transport.gold.analytics_refresh_metadata WHERE quality_status='PASSED' AND dashboard_ready='YES'))\n",
         "WHERE\n",
         "  major_delay_rate_rank_desc = 1\n",
         "  AND observation_count >= 500\n",
@@ -367,7 +340,7 @@
         "      stop_id,\n",
         "      p95_delay_seconds\n",
         "    FROM\n",
-        "      rome_transport.gold.stop_reliability\n",
+        "      (SELECT `stop_id` AS `stop_id`, coalesce(ops_stop_name,stop_name,stop_id) AS `stop_name`, ops_distinct_routes AS `distinct_routes`, ops_distinct_trips AS `distinct_trips`, ops_distinct_service_dates AS `service_date_count`, ops_known_delay_count AS `observation_count`, ops_mean_delay_seconds AS `mean_delay_seconds`, ops_median_delay_seconds AS `median_delay_seconds`, ops_p90_delay_seconds AS `p90_delay_seconds`, ops_p95_delay_seconds AS `p95_delay_seconds`, ops_p99_delay_seconds AS `p99_delay_seconds`, ops_major_delay_count AS `major_delay_count`, ops_major_delay_rate AS `major_delay_rate`, ops_early_count AS `early_count`, ops_early_rate AS `early_rate`, ops_on_time_count AS `on_time_count`, ops_on_time_rate AS `on_time_rate`, ops_moderate_delay_count AS `moderate_delay_count`, ops_moderate_delay_rate AS `moderate_delay_rate`, ops_ranking_eligible AS `ranking_eligible`, ops_major_delay_rate_rank_desc AS `major_delay_rate_rank_desc`, ops_p95_delay_rank_desc AS `p95_delay_rank_desc` FROM rome_transport.gold.stop_reliability WHERE ops_observation_count IS NOT NULL AND ops_release_id = (SELECT refresh_id FROM rome_transport.gold.analytics_refresh_metadata WHERE quality_status='PASSED' AND dashboard_ready='YES'))\n",
         "    WHERE\n",
         "      p95_delay_rank_desc = 1\n",
         "      AND observation_count >= 500\n",
@@ -386,7 +359,7 @@
         "      feed_hour,\n",
         "      SUM(major_delay_count) * 1.0 / SUM(observation_count) AS rate\n",
         "    FROM\n",
-        "      rome_transport.gold.temporal_reliability\n",
+        "      (SELECT `service_date` AS `service_date`, `day_of_week` AS `day_of_week`, `feed_hour` AS `feed_hour`, day_of_week IN (6,7) AS `is_weekend`, CASE WHEN feed_hour<6 THEN 'night' WHEN feed_hour<10 THEN 'morning_peak' WHEN feed_hour<16 THEN 'midday' WHEN feed_hour<20 THEN 'evening_peak' ELSE 'evening' END AS `time_band`, ops_known_delay_count AS `observation_count`, ops_mean_delay_seconds AS `mean_delay_seconds`, ops_median_delay_seconds AS `median_delay_seconds`, ops_p90_delay_seconds AS `p90_delay_seconds`, ops_p95_delay_seconds AS `p95_delay_seconds`, ops_p99_delay_seconds AS `p99_delay_seconds`, ops_major_delay_count AS `major_delay_count`, ops_major_delay_rate AS `major_delay_rate`, ops_early_count AS `early_count`, ops_early_rate AS `early_rate`, ops_on_time_count AS `on_time_count`, ops_on_time_rate AS `on_time_rate`, ops_moderate_delay_count AS `moderate_delay_count`, ops_moderate_delay_rate AS `moderate_delay_rate` FROM rome_transport.gold.temporal_reliability WHERE ops_observation_count IS NOT NULL AND ops_release_id = (SELECT refresh_id FROM rome_transport.gold.analytics_refresh_metadata WHERE quality_status='PASSED' AND dashboard_ready='YES'))\n",
         "    GROUP BY\n",
         "      feed_hour\n",
         "    ORDER BY\n",
@@ -403,7 +376,7 @@
         "    SELECT\n",
         "      SUM(major_delay_count) * 1.0 / SUM(observation_count) AS rate\n",
         "    FROM\n",
-        "      rome_transport.gold.temporal_reliability\n",
+        "      (SELECT `service_date` AS `service_date`, `day_of_week` AS `day_of_week`, `feed_hour` AS `feed_hour`, day_of_week IN (6,7) AS `is_weekend`, CASE WHEN feed_hour<6 THEN 'night' WHEN feed_hour<10 THEN 'morning_peak' WHEN feed_hour<16 THEN 'midday' WHEN feed_hour<20 THEN 'evening_peak' ELSE 'evening' END AS `time_band`, ops_known_delay_count AS `observation_count`, ops_mean_delay_seconds AS `mean_delay_seconds`, ops_median_delay_seconds AS `median_delay_seconds`, ops_p90_delay_seconds AS `p90_delay_seconds`, ops_p95_delay_seconds AS `p95_delay_seconds`, ops_p99_delay_seconds AS `p99_delay_seconds`, ops_major_delay_count AS `major_delay_count`, ops_major_delay_rate AS `major_delay_rate`, ops_early_count AS `early_count`, ops_early_rate AS `early_rate`, ops_on_time_count AS `on_time_count`, ops_on_time_rate AS `on_time_rate`, ops_moderate_delay_count AS `moderate_delay_count`, ops_moderate_delay_rate AS `moderate_delay_rate` FROM rome_transport.gold.temporal_reliability WHERE ops_observation_count IS NOT NULL AND ops_release_id = (SELECT refresh_id FROM rome_transport.gold.analytics_refresh_metadata WHERE quality_status='PASSED' AND dashboard_ready='YES'))\n",
         "    WHERE\n",
         "      is_weekend = true\n",
         "  ) w"
@@ -449,12 +422,12 @@
         "  observation_count,\n",
         "  mean_current_delay_seconds,\n",
         "  mean_previous_stop_delay_seconds,\n",
-        "  mean_realized_next_stop_delay_seconds,\n",
-        "  median_realized_next_stop_delay_seconds,\n",
-        "  p90_realized_next_stop_delay_seconds,\n",
-        "  major_delay_rate AS `Next-Stop Major Delay Risk`,\n",
+        "  mean_observed_current_stop_delay_seconds,\n",
+        "  median_observed_current_stop_delay_seconds,\n",
+        "  p90_observed_current_stop_delay_seconds,\n",
+        "  major_delay_rate AS `Transition Share`,\n",
         "  mean_delay_change_from_previous_stop AS `Delay Change`,\n",
-        "  median_realized_next_stop_delay_seconds / 60.0 AS median_delay_minutes,\n",
+        "  median_observed_current_stop_delay_seconds / 60.0 AS median_delay_minutes,\n",
         "  CONCAT(\n",
         "    CASE previous_delay_band\n",
         "      WHEN 'early' THEN 'In Anticipo'\n",
@@ -483,16 +456,14 @@
         "      observation_count,\n",
         "      mean_current_delay_seconds,\n",
         "      mean_previous_stop_delay_seconds,\n",
-        "      mean_realized_next_stop_delay_seconds,\n",
-        "      median_realized_next_stop_delay_seconds,\n",
-        "      p90_realized_next_stop_delay_seconds,\n",
+        "      mean_observed_current_stop_delay_seconds,\n",
+        "      median_observed_current_stop_delay_seconds,\n",
+        "      p90_observed_current_stop_delay_seconds,\n",
         "      major_delay_rate,\n",
         "      mean_delay_change_from_previous_stop,\n",
-        "      SUM(major_delay_rate * observation_count) OVER (PARTITION BY current_delay_band)\n",
-        "        * 1.0\n",
-        "        / SUM(observation_count) OVER (PARTITION BY current_delay_band) AS weighted_rate_by_current\n",
+        "      SUM(major_delay_rate) OVER (PARTITION BY current_delay_band) AS weighted_rate_by_current\n",
         "    FROM\n",
-        "      rome_transport.gold.delay_propagation\n",
+        "      (SELECT `current_delay_band` AS `current_delay_band`, `previous_delay_band` AS `previous_delay_band`, ops_known_delay_count AS `observation_count`, ops_known_delay_count AS `current_delay_observation_count`, ops_previous_delay_count AS `previous_delay_observation_count`, ops_paired_delay_count AS `paired_delay_observation_count`, ops_mean_delay_seconds AS `mean_current_delay_seconds`, ops_mean_previous_delay_seconds AS `mean_previous_stop_delay_seconds`, ops_mean_delay_seconds AS `mean_observed_current_stop_delay_seconds`, ops_median_delay_seconds AS `median_observed_current_stop_delay_seconds`, ops_p90_delay_seconds AS `p90_observed_current_stop_delay_seconds`, ops_transition_share AS `major_delay_rate`, ops_mean_delay_change_from_previous_stop AS `mean_delay_change_from_previous_stop` FROM rome_transport.gold.delay_propagation WHERE ops_observation_count IS NOT NULL AND ops_release_id = (SELECT refresh_id FROM rome_transport.gold.analytics_refresh_metadata WHERE quality_status='PASSED' AND dashboard_ready='YES'))\n",
         "  ) t"
       ],
       "catalog": "rome_transport",
@@ -847,22 +818,18 @@
       "name": "model_deployment",
       "displayName": "Deployment Status",
       "queryLines": [
-        "WITH latest AS (\n",
-        "  SELECT quality_status\n",
-        "  FROM rome_transport.gold.analytics_refresh_metadata\n",
-        "  ORDER BY refresh_timestamp DESC LIMIT 1\n",
-        ")\n",
-        "SELECT 'Scoring' AS status_item, 'Replay storico' AS status_value,\n",
-        "  'Snapshot del 2 ottobre 2026; non inference live.' AS status_note FROM latest\n",
-        "UNION ALL\n",
-        "SELECT 'Qualità', quality_status,\n",
-        "  'Esito del refresh storico; non prova di freshness corrente.' FROM latest\n",
-        "UNION ALL\n",
-        "SELECT 'Dashboard', 'Snapshot storica',\n",
-        "  'Gold storico; date di origine separate dal publish della dashboard.' FROM latest\n",
-        "UNION ALL\n",
-        "SELECT 'Runtime ML target', 'FastAPI/sklearn',\n",
-        "  'Backend esterno da implementare; Spark conservato come riferimento.' FROM latest"
+        "SELECT 'Scoring Spark' AS status_item, 'Replay storico' AS status_value,\n",
+        " 'Snapshot del 2 ottobre 2026; non inference live.' AS status_note\n",
+        " FROM rome_transport.gold.analytics_refresh_metadata\n",
+        " UNION ALL SELECT 'Qualità dati operativi',quality_status,\n",
+        " 'Controlli sul rilascio operativo; età del feed indicata in Panoramica.'\n",
+        " FROM rome_transport.gold.analytics_refresh_metadata\n",
+        " UNION ALL SELECT 'Dati operativi',ops_status,\n",
+        " 'Gold operativo separato dalle evidenze storiche del modello.'\n",
+        " FROM rome_transport.gold.analytics_refresh_metadata\n",
+        " UNION ALL SELECT 'Runtime ML target','FastAPI/sklearn',\n",
+        " 'Backend esterno da implementare; Spark conservato come riferimento.'\n",
+        " FROM rome_transport.gold.analytics_refresh_metadata"
       ]
     },
     {
@@ -1102,7 +1069,7 @@
         "          observation_count,\n",
         "          major_delay_count\n",
         "        FROM\n",
-        "          rome_transport.gold.temporal_reliability\n",
+        "          (SELECT `service_date` AS `service_date`, `day_of_week` AS `day_of_week`, `feed_hour` AS `feed_hour`, day_of_week IN (6,7) AS `is_weekend`, CASE WHEN feed_hour<6 THEN 'night' WHEN feed_hour<10 THEN 'morning_peak' WHEN feed_hour<16 THEN 'midday' WHEN feed_hour<20 THEN 'evening_peak' ELSE 'evening' END AS `time_band`, ops_known_delay_count AS `observation_count`, ops_mean_delay_seconds AS `mean_delay_seconds`, ops_median_delay_seconds AS `median_delay_seconds`, ops_p90_delay_seconds AS `p90_delay_seconds`, ops_p95_delay_seconds AS `p95_delay_seconds`, ops_p99_delay_seconds AS `p99_delay_seconds`, ops_major_delay_count AS `major_delay_count`, ops_major_delay_rate AS `major_delay_rate`, ops_early_count AS `early_count`, ops_early_rate AS `early_rate`, ops_on_time_count AS `on_time_count`, ops_on_time_rate AS `on_time_rate`, ops_moderate_delay_count AS `moderate_delay_count`, ops_moderate_delay_rate AS `moderate_delay_rate` FROM rome_transport.gold.temporal_reliability WHERE ops_observation_count IS NOT NULL AND ops_release_id = (SELECT refresh_id FROM rome_transport.gold.analytics_refresh_metadata WHERE quality_status='PASSED' AND dashboard_ready='YES'))\n",
         "      ) t\n",
         "  ) subquery\n",
         "WHERE\n",
@@ -1144,7 +1111,7 @@
             "name": "subtitle_text",
             "multilineTextboxSpec": {
               "lines": [
-                "Analisi storiche della rete e replay predittivo Spark; non inference live."
+                "Dati operativi di rete aggiornati alla sorgente validata; replay predittivo Spark nei riquadri dedicati."
               ]
             }
           },
@@ -1488,7 +1455,7 @@
                 },
                 "description": {
                   "fields": [],
-                  "value": "Distribuzione storica delle osservazioni per stato del ritardo"
+                  "value": "Distribuzione dei ritardi riportati alla fermata osservata"
                 }
               },
               "version": 3,
@@ -2112,7 +2079,7 @@
                   ],
                   "filters": [
                     {
-                      "expression": "`metric` IN ('Ultimo Snapshot Predittivo', 'Ultimo Aggiornamento Gold', 'Elaborazione Predizioni', 'Stato Qualità')"
+                      "expression": "`metric` IN ('Ultimo Feed Operativo', 'Ultimo Aggiornamento Gold', 'Età Feed Operativo', 'Stato Qualità')"
                     }
                   ],
                   "disaggregated": true
@@ -2163,11 +2130,11 @@
               "lines": [
                 "### Nota Metodologica\n",
                 "\n",
-                "**Periodo Analizzato:** 8 giorni (25 settembre – 2 ottobre 2026)  \n",
-                "**Classifiche Linee:** Solo linee con ≥ 1.000 osservazioni  \n",
-                "**Classifiche Fermate:** Solo fermate con ≥ 500 osservazioni  \n",
-                "**Fasce di Ritardo:** In Anticipo (< −60 s) | Regolare [−60, 180) s | Moderato [180, 300) s | Ritardo ≥ 5 min (≥ 300 s).  \n",
-                "**Evento ML:** next_stop_delay_ge_300s — proxy GTFS-RT del ritardo alla fermata successiva ≥ 5 min. Probabilità riferita a questo evento; flag positivo solo con p > 0.45 (p = 0.45 negativo)."
+                "**Periodo Analizzato:** archivio disponibile fino al watermark operativo mostrato.  \n",
+                "**Classifiche Linee:** almeno 1.000 osservazioni con ritardo noto.  \n",
+                "**Classifiche Fermate:** almeno 500 osservazioni con ritardo noto; tassi su ritardi disponibili.  \n",
+                "**Fasce di Ritardo Corrente:** In Anticipo (< −60 s) | Regolare [−60, 180) s | Moderato [180, 300) s | Ritardo ≥ 5 min (≥ 300 s).  \n",
+                "**Evento ML storico:** next_stop_delay_ge_300s — proxy futuro GTFS-RT ≥ 5 min; flag Spark con p > 0.45 (p = 0.45 negativo). Distinto dal ritardo corrente osservato."
               ]
             }
           },
@@ -2207,7 +2174,7 @@
             "name": "subtitle_text",
             "multilineTextboxSpec": {
               "lines": [
-                "Tasso di ritardi ≥ 5 min e distribuzione dei ritardi per linea, fermata e fascia oraria."
+                "Affidabilità sui ritardi riportati dal feed alla fermata osservata, fino al watermark operativo Gold."
               ]
             }
           },
@@ -3223,7 +3190,7 @@
             "name": "subtitle_text",
             "multilineTextboxSpec": {
               "lines": [
-                "Come i ritardi persistono, si aggravano o si recuperano da una fermata all'altra."
+                "Transizioni tra stime di ritardo delle fermate rappresentate nella stessa snapshot; non esiti futuri."
               ]
             }
           },
@@ -3244,8 +3211,8 @@
                   "datasetName": "delay_propagation",
                   "fields": [
                     {
-                      "name": "max(Next-Stop Major Delay Risk)",
-                      "expression": "MAX(`Next-Stop Major Delay Risk`)"
+                      "name": "max(Transition Share)",
+                      "expression": "MAX(`Transition Share`)"
                     }
                   ],
                   "filters": [
@@ -3261,7 +3228,7 @@
               "frame": {
                 "showTitle": true,
                 "title": {
-                  "value": "Persistenza Ritardi ≥ 5 min",
+                  "value": "Quota Transizioni Persistenti ≥ 5 min",
                   "fields": []
                 }
               },
@@ -3269,7 +3236,7 @@
               "widgetType": "counter",
               "encodings": {
                 "value": {
-                  "fieldName": "max(Next-Stop Major Delay Risk)",
+                  "fieldName": "max(Transition Share)",
                   "format": {
                     "type": "number-percent",
                     "decimalPlaces": {
@@ -3378,7 +3345,7 @@
               "frame": {
                 "showTitle": true,
                 "title": {
-                  "value": "Ritardo Tipico alla Fermata Successiva",
+                  "value": "Ritardo Tipico alla Fermata Corrente",
                   "fields": []
                 }
               },
@@ -3421,8 +3388,8 @@
                   "datasetName": "delay_propagation",
                   "fields": [
                     {
-                      "name": "max(Next-Stop Major Delay Risk)",
-                      "expression": "MAX(`Next-Stop Major Delay Risk`)"
+                      "name": "max(Transition Share)",
+                      "expression": "MAX(`Transition Share`)"
                     }
                   ],
                   "filters": [
@@ -3439,11 +3406,11 @@
                 "showTitle": true,
                 "showDescription": true,
                 "title": {
-                  "value": "Rischio Successivo dopo Aggravamento",
+                  "value": "Quota Transizioni Regolare → ≥ 5 min",
                   "fields": []
                 },
                 "description": {
-                  "value": "Rischio di ritardo ≥ 5 min alla fermata successiva dopo una transizione da Regolare a Ritardo ≥ 5 min.",
+                  "value": "Quota delle coppie note con passaggio da Regolare a Ritardo ≥ 5 min.",
                   "fields": []
                 }
               },
@@ -3451,7 +3418,7 @@
               "widgetType": "counter",
               "encodings": {
                 "value": {
-                  "fieldName": "max(Next-Stop Major Delay Risk)",
+                  "fieldName": "max(Transition Share)",
                   "format": {
                     "type": "number-percent",
                     "decimalPlaces": {
@@ -3484,8 +3451,8 @@
                   "datasetName": "delay_propagation",
                   "fields": [
                     {
-                      "name": "max(Next-Stop Major Delay Risk)",
-                      "expression": "MAX(`Next-Stop Major Delay Risk`)"
+                      "name": "max(Transition Share)",
+                      "expression": "MAX(`Transition Share`)"
                     },
                     {
                       "name": "Stato Attuale",
@@ -3515,7 +3482,7 @@
                 },
                 "description": {
                   "fields": [],
-                  "value": "Rischio di ritardo ≥ 5 min alla fermata successiva per stato precedente e attuale"
+                  "value": "Quota delle transizioni sul totale delle coppie con ritardo noto"
                 }
               },
               "version": 3,
@@ -3620,7 +3587,7 @@
                   }
                 },
                 "color": {
-                  "fieldName": "max(Next-Stop Major Delay Risk)",
+                  "fieldName": "max(Transition Share)",
                   "format": {
                     "type": "number-percent",
                     "decimalPlaces": {
@@ -3628,7 +3595,7 @@
                       "places": 1
                     }
                   },
-                  "displayName": "Rischio alla Fermata Successiva",
+                  "displayName": "Quota delle Transizioni",
                   "scale": {
                     "type": "quantitative",
                     "colorRamp": {
@@ -3694,7 +3661,7 @@
               "frame": {
                 "showTitle": true,
                 "title": {
-                  "value": "Rischio di Ritardo ≥ 5 min per Stato Attuale",
+                  "value": "Quota Transizioni per Stato Attuale",
                   "fields": []
                 }
               },
@@ -3805,12 +3772,12 @@
                       "expression": "`observation_count`"
                     },
                     {
-                      "name": "Next-Stop Major Delay Risk",
-                      "expression": "`Next-Stop Major Delay Risk`"
+                      "name": "Transition Share",
+                      "expression": "`Transition Share`"
                     },
                     {
-                      "name": "median_realized_next_stop_delay_seconds",
-                      "expression": "`median_realized_next_stop_delay_seconds`"
+                      "name": "median_observed_current_stop_delay_seconds",
+                      "expression": "`median_observed_current_stop_delay_seconds`"
                     },
                     {
                       "name": "Delay Change",
@@ -3858,7 +3825,7 @@
                     "displayName": "Osservazioni"
                   },
                   {
-                    "fieldName": "Next-Stop Major Delay Risk",
+                    "fieldName": "Transition Share",
                     "format": {
                       "decimalPlaces": {
                         "places": 1,
@@ -3867,10 +3834,10 @@
                       "type": "number-percent"
                     },
                     "headerAlignment": "right",
-                    "displayName": "Tasso di Ritardo ≥ 5 min alla Fermata Successiva"
+                    "displayName": "Quota delle Transizioni"
                   },
                   {
-                    "fieldName": "median_realized_next_stop_delay_seconds",
+                    "fieldName": "median_observed_current_stop_delay_seconds",
                     "format": {
                       "abbreviation": "none",
                       "decimalPlaces": {
@@ -3880,7 +3847,7 @@
                       "type": "number-plain"
                     },
                     "headerAlignment": "right",
-                    "displayName": "Ritardo Mediano alla Fermata Successiva",
+                    "displayName": "Ritardo Mediano alla Fermata Corrente",
                     "formatTemplate": "{{ @formatted }} s"
                   },
                   {
@@ -3918,7 +3885,7 @@
               "lines": [
                 "## Cosa Mostra Questo\n",
                 "\n",
-                "I ritardi ≥ 5 min sono altamente persistenti. Quando sia la fermata precedente che quella attuale sono già in ritardo ≥ 5 min, l'88,7% delle osservazioni del dataset attuale rimane in ritardo ≥ 5 min alla fermata successiva. La variazione media del ritardo è vicina allo zero, indicando che i ritardi ≥ 5 min tendono a persistere piuttosto che recuperare rapidamente."
+                "Quote delle transizioni tra fermata precedente e corrente sulle coppie con ritardo noto. Medie e variazioni descrivono stime contemporanee del feed; non sono probabilità del modello né arrivi certificati."
               ]
             }
           },

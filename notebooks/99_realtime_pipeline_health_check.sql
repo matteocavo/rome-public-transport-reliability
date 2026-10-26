@@ -59,6 +59,46 @@ LIMIT 30;
 
 -- COMMAND ----------
 
+-- Watermarks and measured lag are not a claim of a configured freshness SLA.
+WITH layers AS (
+  SELECT 0 AS position, 'bronze.trip_updates' AS layer, COUNT(*) AS rows,
+         MAX(feed_timestamp) AS latest_feed_timestamp FROM rome_transport.bronze.trip_updates
+  UNION ALL SELECT 1, 'silver.trip_updates', COUNT(*), MAX(feed_timestamp)
+    FROM rome_transport.silver.trip_updates
+  UNION ALL SELECT 2, 'silver.realtime_trip_stop_observations', COUNT(*), MAX(feed_timestamp)
+    FROM rome_transport.silver.realtime_trip_stop_observations
+  UNION ALL SELECT 3, 'silver.realtime_enriched_observations', COUNT(*), MAX(feed_timestamp)
+    FROM rome_transport.silver.realtime_enriched_observations
+  UNION ALL SELECT 4, 'features.next_stop_delay_scoring', COUNT(*), MAX(feed_timestamp)
+    FROM rome_transport.features.next_stop_delay_scoring
+)
+SELECT layer, rows, latest_feed_timestamp,
+       unix_timestamp(current_timestamp()) - latest_feed_timestamp AS feed_age_seconds,
+       MAX(latest_feed_timestamp) OVER () - latest_feed_timestamp AS lag_from_bronze_seconds,
+       LAG(latest_feed_timestamp) OVER (ORDER BY position) - latest_feed_timestamp AS lag_from_previous_layer_seconds
+FROM layers ORDER BY position;
+
+-- COMMAND ----------
+
+SELECT feed_timestamp, entity_id, trip_id, stop_sequence, stop_id, COUNT(*) AS duplicate_rows
+FROM rome_transport.features.next_stop_delay_scoring
+GROUP BY feed_timestamp, entity_id, trip_id, stop_sequence, stop_id
+HAVING COUNT(*) > 1;
+
+-- COMMAND ----------
+
+SELECT COUNT(*) AS rows, COUNT(DISTINCT feed_timestamp) AS feed_epochs,
+       COUNT(DISTINCT source_silver_version) AS source_versions,
+       COUNT(DISTINCT feature_preparation_batch_id) AS preparation_batches,
+       MIN(source_silver_version) AS source_silver_version,
+       MAX(feature_prepared_at) AS prepared_at,
+       COUNT_IF(feature_contract_hash IS NULL OR feature_contract_hash <>
+         '11682b3cc1ab5c1d8440af4f6294e932e815126c3dd86ab609f4d5f8f35c41a5') AS invalid_hash_rows,
+       COUNT_IF(feature_prepared_at > current_timestamp()) AS future_preparation_rows
+FROM rome_transport.features.next_stop_delay_scoring;
+
+-- COMMAND ----------
+
 SELECT
     run_timestamp,
     source_name,

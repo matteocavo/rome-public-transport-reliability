@@ -1,5 +1,8 @@
 # Handoff di dati e accesso per il ML operativo
 
+**Stato runtime al 26 ottobre 2026:** Silver osservazioni v10, enrichment v10 (56,941,882 righe) e input scoring v5 (26,327 righe) allineati al feed **1793001463 / 2026-10-26T08:57:43+01:00**. Gold operativo validato, refresh **2026-10-26T09:27:31.249044+00:00**. Sono dati del batch validato, non una promessa di latenza live. Prediction e metriche Spark restano evidenze storiche. Job downstream separato predisposto, **PAUSED**, con proposta iniziale ogni 2 ore basata sul benchmark di circa 45 minuti; ingestion 05 invariata ogni 10 minuti. [Evidenze, limiti e orchestrazione](DOWNSTREAM_RUNTIME_ROLLOUT.md).
+
+
 Stato: contratto implementato nel repository; letture dati runtime verificate il 25 ottobre 2026.
 Backend, nuovo modello e orchestratori non sono implementati qui. Architettura:
 [ADR-001](ARCHITECTURE_DECISIONS.md). Ordine di implementazione: [roadmap](ROADMAP.md).
@@ -72,8 +75,7 @@ non un esito futuro. L'export aggiunge inoltre `export_source_version` fissata,
 `exported_at` e `feed_age_seconds`; confrontare le epoche in UTC e visualizzare Europe/Rome.
 Sono **assenti etichette future, esiti realizzati, previsioni storiche e output predittivi**.
 
-Snapshot validata: **v0, 24,797 righe, epoca 1790928849**, 2 ottobre 2026 10:14:09
-Europe/Rome. Resta una **validazione storica dello scoring, non inference live**.
+Snapshot storica PR3: **v0, 24,797 righe, epoca 1790928849**, 2 ottobre 2026 10:14:09 Europe/Rome. La validazione corrente usa **v5, 26,327 righe, epoca 1793001463**, 2026-10-26T08:57:43+01:00. Sono input osservabili aggiornati al batch, non prediction né inference live. Versioni e lineage sono nel [report runtime](DOWNSTREAM_RUNTIME_ROLLOUT.md).
 L'incidenza dei valori mancanti per alcuni input/categorie opzionali è circa 75-79%; uno
 schema valido non dimostra una qualità del modello accettabile su questa popolazione.
 
@@ -223,7 +225,7 @@ R² 0.6940, WAPE 0.3293). Nessuna metrica è attribuita a un modello esterno non
 
 ## Divario di freshness e disegno dell'orchestrazione interna
 
-L'inventario Job in sola lettura contiene un solo Job di ingestion pianificato, con
+L'inventario Job di baseline del 25 ottobre conteneva un solo Job di ingestion pianificato, con
 **un solo task che punta a 05**, periodico ogni 10 minuti e non in pausa. Non risultano
 dipendenze dei task 06/07/08 o altri Job downstream nell'elenco. Il notebook 05 esegue
 solo append Bronze/audit e non invoca notebook downstream. Il notebook 06 sovrascrive
@@ -231,13 +233,16 @@ gli output Silver quando viene eseguito esplicitamente; 07 fissa gli input e sov
 l'arricchimento; `08_current_scoring_dataset` richiede un gate esplicito di scrittura
 staging, disabilitato per default. Nessun commit Delta esegue automaticamente questi notebook.
 
-Ultima epoca Bronze Trip Update osservata: **1792960055** (25 ottobre); osservazioni Silver,
+Nella baseline del 25 ottobre, ultima epoca Bronze Trip Update osservata: **1792960055** (25 ottobre); osservazioni Silver,
 arricchimento e staging restano tutti a **1790928849** (2 ottobre). L'arricchimento è v8
 e lo staging v0. Questo dimostra l'assenza di orchestrazione downstream, non un'interruzione
 dell'ingestion. Non prova che ogni sorgente sia continuamente sana. I risultati Gold/modello
 esistenti sono storici.
 
-Catena di task Databricks proposta, da autorizzare separatamente:
+Disegno logico di baseline. Il rollout del 26 ottobre ha validato 06/07/08 e Gold operativo
+in un Job separato da 05: non è stata implementata una dipendenza dal successo dell'ultima
+run ingestion. Le letture fissano le versioni disponibili; watermark e anomalie delle sorgenti
+restano nei controlli health. La politica di freshness per l'attivazione va ancora accettata.
 
 ```text
 05 ingestion + audit terminale
@@ -251,8 +256,7 @@ Catena di task Databricks proposta, da autorizzare separatamente:
 Non eseguire il vecchio adapter 08 di training, 09 di etichettatura o 10-12 ML alla cadenza
 dell'ingestion. Rilasci di training/maturazione delle etichette usano un workflow offline
 separato. Refresh Gold descrittivo e futuro refresh del serving predittivo sono rilasci
-separati e versionati; non eseguire l'attuale 13 invariato sugli output di modelli esterni.
-Attualmente assume metadati/soglia Spark storici e scrive otto tabelle.
+separati e versionati; il nuovo 13 distingue current_operations dal riferimento storico. Il percorso operativo aggiorna cinque aggregati e il manifest, senza scrivere le due tabelle del modello. Non usa output di modelli esterni.
 
 Prima di abilitare questo DAG: salvare copie di sorgenti/Job, misurare il costo di
 06/07/feature sull'intero storico rispetto all'intervallo di 10 minuti e alle quote Free;
@@ -282,15 +286,15 @@ proprio contratto di rilascio idempotente.
 ## Mappatura serving e confine di rilascio
 
 Questi sono **nomi delle future risorse FastAPI**, non endpoint esistenti. La stessa
-mappatura è machine-readable nel JSON. Tutte le risorse Gold attuali sono snapshot storiche.
+mappatura è machine-readable nel JSON. Gold ora separa i campi operativi `ops_` dalle colonne di riferimento storico; le risorse predittive e di valutazione restano storiche.
 
 | Tabella Databricks | Risorsa futura | Interpretazione |
 | --- | --- | --- |
 | `gold.executive_overview` | `/network/overview` | Snapshot KPI di rete; date storiche e delle previsioni separate |
-| `gold.route_reliability` | `/reliability/routes` | Linee ponderate per osservazione, minimo 1,000 osservazioni per i ranking |
-| `gold.stop_reliability` | `/reliability/stops` | Contesto della fermata osservata, minimo 500 per i ranking |
+| `gold.route_reliability` | `/reliability/routes` | Campi ops_: tassi sui ritardi noti, minimo 1,000 ritardi noti per i ranking |
+| `gold.stop_reliability` | `/reliability/stops` | Campi ops_ della fermata osservata, minimo 500 ritardi noti per i ranking |
 | `gold.temporal_reliability` | `/reliability/temporal` | Data di servizio/giorno/ora del feed |
-| `features.next_stop_delay_scoring` | `/scoring/inputs` | Input osservabile con versione fissata; attualmente storico |
+| `features.next_stop_delay_scoring` | `/scoring/inputs` | Input osservabile del batch validato, con versione fissata; nessuna prediction |
 | `gold.predictive_operations` | `/predictions/reference` | Replay Spark storico, mai previsioni correnti esterne |
 | `gold.model_performance` | `/models/reference/evaluation` | Metriche storiche congelate |
 | `ml.model_registry_metadata` | `/models/reference/metadata` | Metadati storici di modello/run/tentativo |
@@ -308,16 +312,20 @@ terminali/di errore richiedono aggregazioni consapevoli degli eventi.
 Le future previsioni operative e gli endpoint modello/valutazione devono derivare dal
 nuovo artifact/valutazione e dallo storico delle prediction progettato separatamente.
 Non si dichiara qui una nuova tabella serving o un endpoint. Le 17,177 previsioni storiche
-esistenti restano intatte e non sono sostituite dalle 24,797 righe di input. Schema,
+esistenti restano intatte e non sono sostituite dalle 26,327 righe di input osservabile. Schema,
 versione del modello, soglia validata, freshness, identità, lineage della run e ID di
 rilascio devono accompagnare il futuro output predittivo.
 
 ## Accettazione runtime separata
 
-Questa PR non modifica Job, esecuzioni di notebook, tabelle downstream, modelli, definizioni
-dashboard live o publish. Attività successive necessarie: autorizzare e validare il DAG
-downstream sopra; approvare hosting/autenticazione/capacità del backend; rilasciare un
+La precedente PR di handoff non modificava il runtime. Il rollout successivo del 26 ottobre ha ora aggiornato Silver, enrichment, input scoring e Gold operativo, predisponendo un Job downstream in pausa. Modelli, dashboard live e publish restano invariati. Attività successive necessarie: verificare quote e attivazione del Job downstream in pausa; approvare hosting/autenticazione/capacità del backend; rilasciare un
 export curato; implementare/valutare/persistire e ricaricare il modello esterno; inference
 indipendente; poi storico delle prediction, adattamento serving e n8n. Correzioni alla
 sorgente dashboard e sostituzione necessaria di PDF/screenshot sono tracciate
 nell'[audit dashboard](../dashboard/databricks/README.md).
+
+## Stato del rollout dati del 26 ottobre
+
+**Stato runtime al 26 ottobre 2026:** Silver osservazioni v10, enrichment v10 (56,941,882 righe) e input scoring v5 (26,327 righe) allineati al feed **1793001463 / 2026-10-26T08:57:43+01:00**. Gold operativo validato, refresh **2026-10-26T09:27:31.249044+00:00**. Sono dati del batch validato, non una promessa di latenza live. Prediction e metriche Spark restano evidenze storiche. Job downstream separato predisposto, **PAUSED**, con proposta iniziale ogni 2 ore basata sul benchmark di circa 45 minuti; ingestion 05 invariata ogni 10 minuti. [Evidenze, limiti e orchestrazione](DOWNSTREAM_RUNTIME_ROLLOUT.md).
+
+Il nuovo percorso Gold preserva i campi storici, aggiungendo `ops_` e il controllo del rilascio validato. I KPI operativi sono stime di ritardo correnti del feed; non ridefiniscono l'evento ML futuro. I backend futuri devono leggere esplicitamente i campi e il manifest del corretto ambito, senza assumere che una data di refresh renda attuali le metriche del modello. Il training etichettato resta v12, con la copertura storica di otto date; 09-12 non sono stati rieseguiti.

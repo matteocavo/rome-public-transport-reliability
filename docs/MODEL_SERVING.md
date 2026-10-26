@@ -93,7 +93,7 @@ Il percorso di scoring legge una singola versione staging fissata, verifica ordi
 
 Tutti i gate sono OFF per default: ALLOW_MODEL_FIT, ALLOW_MODEL_PERSIST, ALLOW_UC_REGISTRATION, ALLOW_MODEL_INFERENCE e ALLOW_SCORING_WRITE. Il fit richiede gate di fit e persistenza attivi, sorgente fissata e commit esatto del codice prima di iniziare. Run MLflow già attive vengono rifiutate, evitando scritture accidentali nella run storica. Lo scoring non ha un writer nemmeno cambiando il flag di scrittura. Il precedente piano Spark PR5 è sostituito: lo storico permanente delle prediction appartiene alla fase F della roadmap dopo la validazione del modello esterno. La tabella next_stop_delay_predictions esistente non viene sovrascritta.
 
-**L'ultima sorgente di scoring è storica perché Silver non è aggiornata.** Lo staging PR3 è stato validato su Silver v8 / epoca del feed 1790928849 (2 ottobre 2026), con diversi input/categorie opzionali circa 75–79% NULL. Lo scorer riporta l'anzianità del feed, non inventa freschezza dei dati e non definisce questo risultato una previsione live. Il solo contratto degli input non giustifica nuova imputazione o affermazioni sulla qualità del modello.
+**L'input scoring è ora aggiornato al batch validato del 26 ottobre.** PR3 aveva validato la snapshot del 2 ottobre su Silver v8; il nuovo stato, le versioni e la missingness sono nel [report downstream](DOWNSTREAM_RUNTIME_ROLLOUT.md). Questo aggiorna gli input, non il modello: nessun artifact PR4 o nuovo scoring è stato prodotto. Prediction e metriche Spark rimangono storiche; l'anzianità del feed resta esplicita e non si dichiarano qualità predittiva o inference live.
 
 ## Validazione locale dell'implementazione di riferimento preservata
 
