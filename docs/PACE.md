@@ -23,7 +23,7 @@ lakehouse, contratti delle feature e dei dati, analytics, Gold e freshness) dal 
 React/Google AI Studio saranno il frontend. Spark ML è **ML storico / sperimentale**:
 si conservano risultati e codice, ma non è più il runtime operativo target.
 
-**Operativo oggi:** ingestion Bronze ogni 10 minuti; Silver, enrichment, input scoring e Gold operativo validati manualmente il 26 ottobre. Il Job downstream separato è predisposto in pausa. Il dataset etichettato, il replay e la valutazione Spark restano storici. [Evidenze e lag](DOWNSTREAM_RUNTIME_ROLLOUT.md). Il JSON locale separa dati operativi e modello storico; PDF/screenshot precedenti sono da sostituire dopo publish autorizzato. [Audit](../dashboard/databricks/README.md).
+**Operativo oggi:** ingestion Bronze ogni 10 minuti; Silver, enrichment, input scoring e Gold operativo validati manualmente il 26 ottobre. Il Job downstream separato è predisposto in pausa. Il dataset etichettato, il replay e la valutazione Spark restano storici. [Evidenze e lag](DOWNSTREAM_RUNTIME_ROLLOUT.md). La dashboard pubblicata separa dati operativi e modello storico; PDF e quattro screenshot sono stati sostituiti con l’export autentico del 26 ottobre, inclusa la label Propagation corretta di PR #9. [Audit](../dashboard/databricks/README.md).
 
 Il documento mantiene il framework PACE e le motivazioni progettuali, distinguendo ipotesi iniziali, decisioni implementate, risultati verificati ed estensioni future. I risultati riportati provengono dalle esecuzioni validate comunicate per il progetto; questa revisione documentale non riesegue i Job Databricks.
 
@@ -33,7 +33,7 @@ Il documento mantiene il framework PACE e le motivazioni progettuali, distinguen
 
 **Percorso operativo sostituito:** persistenza Spark ML. MLflow tracking funziona con URI espliciti, ma lo smoke nativo fallisce sulla whitelist Spark Connect; classic Dedicated ML compute non è disponibile nell'organization Free. Il futuro modello operativo sarà valutato e persistito nel backend esterno, senza dipendere dalla registrazione UC. Scoring e metriche Spark restano storici.
 
-**Contratto semantico corrente:** evento `next_stop_delay_ge_300s`, display “Ritardo ≥ 5 min”, target >=300 secondi invariato. La soglia Spark storica è strettamente p>0.45; la soglia del futuro modello deve essere rivalidata. Il JSON locale include le correzioni architetturali; PDF e screenshot restano export storici in tema chiaro, con issue esplicitamente documentate nell'audit.
+**Contratto semantico corrente:** evento `next_stop_delay_ge_300s`, display “Ritardo ≥ 5 min”, target >=300 secondi invariato. La soglia Spark storica è strettamente p>0.45; la soglia del futuro modello deve essere rivalidata. PDF e screenshot in tema chiaro sono allineati alla versione pubblicata del 26 ottobre: KPI operativi fino al watermark validato e modello Spark storico. La correzione JSON della label di PR #9 è già nel workspace pubblicato e deve ancora essere integrata in main.
 
 **Distribuzione:** la dashboard pubblicata richiede autenticazione Databricks. L'export JSON e il PDF completo sono presenti nel repository. Una presentazione Power BI pubblica separata rimane futura. Il vincolo di accesso riguarda la distribuzione della dashboard interattiva, non il funzionamento dell'implementazione Databricks.
 
@@ -1030,7 +1030,7 @@ Il repository include l'[export JSON](../dashboard/databricks/dashboard/Affidabi
 
 # 43. DASHBOARD, PAGINA 1 — PANORAMICA ESECUTIVA
 
-**Pagina implementata:** Panoramica Esecutiva. L'interfaccia italiana è intenzionale per Roma e gli interlocutori della mobilità locale. La pagina presenta KPI storici di rete e sintesi dell'ultimo scoring.
+**Pagina implementata:** Panoramica Esecutiva. L'interfaccia italiana è intenzionale per Roma e gli interlocutori della mobilità locale. La pagina presenta KPI operativi sul ritardo riportato alla fermata osservata fino al watermark validato e, in riquadri separati, il replay Spark storico del 2 ottobre. Il feed operativo mostrato è 26 ottobre 2026 08:57 Europe/Rome; Gold è stato aggiornato alle 10:27. L’età del feed nel PDF è una misura fissata al momento dell’export, non uno SLA.
 
 L'inventario progettuale seguente conserva le motivazioni originarie, senza implicare che ogni grafico o approfondimento sia implementato. L'export della dashboard è il riferimento per il layout effettivo.
 
@@ -1044,7 +1044,7 @@ Visualizzazioni ipotizzate: andamento temporale dei ritardi, classifica di affid
 
 # 44. DASHBOARD, PAGINA 2 — AFFIDABILITÀ DELLA RETE
 
-**Pagina implementata:** Affidabilità della Rete. Presenta confronti per linea, fermata e tempo, applicando i requisiti minimi di numerosità per il ranking.
+**Pagina implementata:** Affidabilità della Rete. Presenta confronti operativi per linea, fermata e tempo, con tassi sui ritardi noti e ranking con almeno 1.000 ritardi noti per linea e 500 per fermata.
 
 **Finalità:** individuare dove si concentrano i problemi. L'inventario iniziale prevedeva una mappa di calore linea × ora, classifiche delle fermate, distribuzione dei ritardi, P90 e andamento delle linee. I filtri proposti riguardavano linea, data, giorno della settimana, ora e direzione.
 
@@ -1054,7 +1054,7 @@ Questi elementi conservano il disegno originario; non attestano che ogni visuali
 
 # 45. DASHBOARD, PAGINA 3 — PROPAGAZIONE DEI RITARDI
 
-**Pagina implementata:** Propagazione dei Ritardi. Presenta stati di ritardo corrente/precedente e associazioni con gli esiti realizzati alla fermata successiva.
+**Pagina implementata:** Propagazione dei Ritardi. Presenta transizioni tra stime di ritardo della fermata precedente e corrente nella stessa snapshot. Le quote usano il totale delle coppie con ritardo noto: non sono outcome futuri o probabilità ML. Asse e legenda del visual per stato attuale riportano ora “Quota delle Transizioni”; il nuovo PDF non mostra il clipping della descrizione KPI di pagina 3.
 
 **Finalità:** comprendere come il ritardo evolve lungo una corsa. Le visualizzazioni inizialmente ipotizzate erano sequenza delle fermate rispetto al ritardo, ritardo cumulato, incremento medio per segmento e confronto tra linee.
 
@@ -1064,7 +1064,7 @@ L'inventario è una motivazione progettuale, non una dichiarazione di implementa
 
 # 46. DASHBOARD, PAGINA 4 — MONITORAGGIO PREDITTIVO
 
-**Pagina implementata:** Monitoraggio Predittivo. Presenta previsioni batch del ritardo, probabilità alla fermata successiva e informazioni utili a stabilire priorità operative.
+**Pagina implementata:** Monitoraggio Predittivo. Presenta il replay Spark storico della snapshot del 2 ottobre 2026: ritardi/probabilità alla fermata successiva e priorità di riferimento, non nuove previsioni operative o inference live.
 
 **Finalità:** tradurre gli output ML in informazioni leggibili dagli interlocutori operativi. L'inventario originario considerava linea, veicolo, fermata corrente, ritardo corrente, ritardo successivo previsto, probabilità e flag di ritardo ≥ 5 min, media storica e livello di rischio. Le categorie iniziali erano Normale, Elevato, Alto e Critico.
 
@@ -1074,7 +1074,7 @@ L'inventario resta un riferimento progettuale; non afferma che ogni colonna o vi
 
 # 47. DASHBOARD, PAGINA 5 — PRESTAZIONI DEL MODELLO
 
-**Pagina implementata:** Prestazioni del Modello. Mostra le metriche congelate di regressione e classificazione, attraverso i dati Gold, rendendo trasparenti le scelte finali.
+**Pagina implementata:** Prestazioni del Modello. Mostra le metriche TEST storiche congelate di regressione Persistence e classificazione Spark, attraverso Gold. Soglia Spark p>0.45, uguaglianza negativa; soglia sklearn da rivalidare. Il nuovo export riporta MAE 136.9818s e RMSE 401.8525s, senza il precedente RMSE 489s.
 
 L'inventario progettuale originario comprendeva:
 
@@ -1455,7 +1455,7 @@ Il modello di Machine Learning è una componente del progetto, non il progetto n
 
 ## Stato finale ed estensioni
 
-Il percorso storico è implementato fino a replay, Gold e dashboard autenticata; ingestion è pianificata e il downstream operativo è validato manualmente. Il target operativo esterno è definito ma non implementato. JSON locale corretto, PDF/screenshot precedenti da sostituire dopo rollout autorizzato; Power BI resta separato. Dati, target, modelli e metriche storiche non vengono ricalcolati.
+Il percorso storico è implementato fino a replay, Gold e dashboard autenticata; ingestion è pianificata e il downstream operativo è validato manualmente. Il target operativo esterno è definito ma non implementato. Dashboard pubblicata e PDF/quattro screenshot aggiornati il 26 ottobre; correzione JSON della label Propagation tracciata in PR #9, senza merge automatico. Power BI resta separato. Dati, target, modelli e metriche storiche non vengono ricalcolati.
 
 ## Roadmap operativa corrente
 

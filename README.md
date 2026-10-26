@@ -11,7 +11,7 @@ Un lakehouse Databricks per i feed del trasporto pubblico di Roma, con analisi s
 
 ## Anteprima Dashboard
 
-**Artifact di presentazione precedenti:** PDF e screenshot restano gli export storici della dashboard. Non rappresentano i nuovi KPI operativi. Il JSON locale legge i campi operativi Gold e separa il replay Spark storico; deploy, publish ed export aggiornati sono il passaggio successivo. [Audit e piano](dashboard/databricks/README.md).
+**Export aggiornati il 26 ottobre 2026:** PDF completo e quattro screenshot sono estratti dalla dashboard pubblicata in tema chiaro. Overview, Reliability e Propagation descrivono i dati operativi fino al feed **26 ottobre 08:57 Europe/Rome**; Predictive, Model Performance e i riquadri predittivi di Overview restano evidenze Spark storiche del 2 ottobre. Non si dichiara inference ML live. Il PDF include la correzione della label Propagation di [PR #9](https://github.com/matteocavo/rome-public-transport-reliability/pull/9), già pubblicata nel workspace e ancora da integrare nel JSON di main. [Provenienza e verifiche](dashboard/databricks/README.md).
 
 <p align="center">
   <img src="dashboard/databricks/screenshots/overview.png"
@@ -231,7 +231,7 @@ La Panoramica Esecutiva è mostrata in apertura; qui seguono tre ulteriori pagin
        alt="Propagazione dei Ritardi"
        width="100%">
   <br>
-  <em>Propagazione dei Ritardi</em>
+  <em>Quote delle transizioni tra stime di ritardo nella stessa snapshot</em>
 </p>
 
 <p align="center">
@@ -239,7 +239,7 @@ La Panoramica Esecutiva è mostrata in apertura; qui seguono tre ulteriori pagin
        alt="Monitoraggio Predittivo"
        width="100%">
   <br>
-  <em>Replay predittivo storico; testi dell'export precedente da riallineare</em>
+  <em>Replay predittivo Spark storico del 2 ottobre 2026; non inference live</em>
 </p>
 
 <p align="center">
@@ -247,7 +247,7 @@ La Panoramica Esecutiva è mostrata in apertura; qui seguono tre ulteriori pagin
        alt="Prestazioni del Modello"
        width="100%">
   <br>
-  <em>Prestazioni Spark storiche; note metriche/deployment dell'export da correggere</em>
+  <em>Metriche TEST storiche Spark/Persistence; FastAPI/sklearn resta il target futuro</em>
 </p>
 
 L’interfaccia italiana è una scelta intenzionale, coerente con il contesto operativo della mobilità pubblica romana. Le fasce di rischio del JSON corrispondono al campo Gold `risk_band`: Basso p<0.20, Medio 0.20<=p<=0.45, Alto 0.45<p<0.80, Critico p>=0.80. Sono fasce di probabilità dell’evento ≥5 min, distinte dalla severità in secondi e dalla decisione binaria.
@@ -264,7 +264,7 @@ contracts/
   operational_ml.py
 dashboard/
   databricks/
-    README.md  [audit e rollout degli export storici]
+    README.md  [provenienza e verifica degli export pubblicati]
     dashboard/
       Affidabilita_Trasporto_Pubblico_Roma.lvdash.json
     pdf/
@@ -318,7 +318,7 @@ Git non versiona le directory vuote. Le impostazioni locali del workspace dell'e
 
 Le osservazioni future GTFS-Realtime sono proxy operativi e possono ancora essere previsioni riviste. Posizioni mancanti o obsolete, variazioni degli orari e anomalie al cambio del giorno di servizio limitano l'interpretazione. Il filtro ±12 ore affronta artefatti diagnosticati: non è una soglia GTFS universale e non rende automaticamente invalidi i dati notturni.
 
-Otto date di servizio non dimostrano generalizzazione sul lungo periodo o sull'intera rete cittadina. I timestamp del feed non provano da soli la disponibilità in ingestion; il replay non è una nuova valutazione TEST. La dashboard richiede autenticazione. PDF e screenshot sono export storici con issue dichiarate nell'audit, non prova di freshness o deployment operativo. Free Edition ha quote e nessuno SLA.
+Otto date di servizio non dimostrano generalizzazione sul lungo periodo o sull'intera rete cittadina. I timestamp del feed non provano da soli la disponibilità in ingestion; il replay non è una nuova valutazione TEST. La dashboard richiede autenticazione. PDF e screenshot sono export statici del 26 ottobre, con watermark operativo e ambito storico del modello espliciti; non provano aggiornamento continuo o deployment ML operativo. Free Edition ha quote e nessuno SLA.
 
 ## Sviluppi futuri
 
@@ -326,8 +326,8 @@ Seguire la [roadmap operativa](docs/ROADMAP.md): attivazione del Job downstream 
 
 ## Stato del progetto
 
-**Implementati e validati storicamente:** Bronze/Silver, associazione causale delle posizioni, Feature Engineering, etichettatura futura e filtro di qualità, esperimenti MLflow, selezione su validation, TEST congelato, replay batch, Gold, SQL e dashboard AI/BI. Ingestion pianificata operativa; il percorso downstream operativo è ora validato manualmente; il suo Job resta in pausa. PDF/screenshot precedenti conservati come evidenza storica con issue dichiarate.
+**Implementati e validati storicamente:** Bronze/Silver, associazione causale delle posizioni, Feature Engineering, etichettatura futura e filtro di qualità, esperimenti MLflow, selezione su validation, TEST congelato, replay batch, Gold, SQL e dashboard AI/BI. Ingestion pianificata operativa; il percorso downstream operativo è ora validato manualmente; il suo Job resta in pausa. PDF e quattro screenshot riallineati alla dashboard pubblicata del 26 ottobre, con ambiti operativo e modello storico distinti.
 
 **Percorso sostituito:** deployment Spark ML, conservato come implementazione storica/di riferimento; runtime operativo futuro FastAPI/sklearn.
 
-**Da completare:** attivazione controllata del Job downstream dopo verifica delle quote, backend operativo e presentazione app; riallineamento live dashboard/PDF/screenshot autorizzato separatamente. Non si dichiara un'API live, un modello operativo già distribuito o adozione cittadina.
+**Da completare:** attivazione controllata del Job downstream dopo verifica delle quote, backend operativo e presentazione app; mantenimento degli export allineati ai successivi rilasci della dashboard. Non si dichiara un'API live, un modello operativo già distribuito o adozione cittadina.
