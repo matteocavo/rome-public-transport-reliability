@@ -11,7 +11,8 @@ requirements-dev.txt e pyproject.toml. requirements-dev.lock rimane un entry poi
 Il core usa librerie gestite dal runtime Databricks e non aggiunge un manifest pip artificiale.
 
 Alert e security updates sono impostazioni remote separate dal file Dependabot.
-La policy remota può limitare le action ai due repository necessari. L’obbligo globale
-SHA deve essere attivato solo dopo che i workflow dei branch mantenuti sono aggiornati,
-per evitare di bloccare le PR ancora basate sui vecchi tag.
+La policy remota consente soltanto checkout/setup-python e richiede SHA completi.
+Tutte le PR security attive ereditano workflow aggiornati; branch storici ancora a tag
+devono essere aggiornati prima di nuove esecuzioni. La PR runtime dipende dalla PR Git/CI
+dell’app per non duplicare queste modifiche nella review.
 Code scanning rimane rinviato esplicitamente; nessun merge automatico degli aggiornamenti.
