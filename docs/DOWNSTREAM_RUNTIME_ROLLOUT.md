@@ -1,5 +1,7 @@
 # Rollout downstream controllato
 
+**Stato runtime dopo attivazione del 26 ottobre 2026:** Job downstream `1084265487272426` **ACTIVE**, trigger periodico ogni **2 ore**, 06 → 07 → input scoring 08 → Gold operativo 13. Una run automatica e una run manuale equivalente verificate. Ultimo batch validato: feed **1793015012 / 2026-10-26T12:43:32+01:00**, Silver osservazioni v13, enrichment v13 (57,493,151 righe), scoring v9 (23,039 righe). Gold refresh **2026-10-26T12:43:28.368Z**, qualità PASSED e dashboard_ready YES. La quota Free residua non è verificabile; sostenibilità di lungo periodo e SLA non dimostrati. Ingestion 05 ogni 10 minuti invariata; prediction e metriche ML restano storiche. [Evidenze e limiti](DOWNSTREAM_RUNTIME_ROLLOUT.md).
+
 ## Ambito e stato della verifica
 
 Rollout del 25-26 ottobre 2026, a partire da main
@@ -174,7 +176,7 @@ Tutte le **10 celle SQL health** e le **27 query dataset dashboard** hanno stato
 
 Ingestion continua con run successive riuscite e configurazione invariata. L’audit degli ultimi quattro giorni conserva due errori transitori di decodifica (Trip Updates e Vehicle Positions), successivamente recuperati; non si certifica assenza assoluta di failure. Gli empty feed riusciti restano distinti dai fallimenti. Feature storiche v8, labeled v12 e prediction ML v0 sono invariati; nessun nuovo model scoring o training. Le due tabelle Gold del modello sono state confrontate per valore prima/dopo il refresh.
 
-## Orchestrazione predisposta e limiti
+## Configurazione e benchmark prima dell’attivazione
 
 Job separato **1084265487272426**, `06_13_downstream_operational_refresh`: 06 → 07 → 08 current scoring → 13 current operations. Job ingestion 05 **195066091322974** invariato, ogni 10 minuti. Un solo run downstream concorrente, coda abilitata, dipendenze ALL_SUCCESS e `max_retries=0`; nessun training/model scoring. I gate di scrittura restano OFF nei notebook e sono abilitati esplicitamente nei parametri del Job.
 
@@ -199,3 +201,85 @@ versionato. Verificati diff whitespace, UTF-8, JSON, link/anchor relativi e patt
 segreti o percorsi privati. `.gitignore` già esclude cache, bytecode, configurazioni e
 dati locali; non richiede modifiche. I test sorgente restano versionati. Nessun binario
 PDF/PNG e nessun notebook ML 09-12 o helper condiviso delle feature è stato modificato.
+
+## Attivazione e validazione del 26 ottobre
+
+Main HEAD verificato: `a2dcae8f5a858a6ac4e7d08a5be8d67ff51e0a1e`; PR #7-#10 mergiate e working tree pulito. Configurazione e sei sorgenti runtime corrispondevano esattamente alla baseline versionata. Attivazione richiesta **2026-10-26T10:59:16.717093+00:00**, readback **2026-10-26T10:59:19.654941+00:00**: l’unica proprietà runtime modificata è `trigger.pause_status`, da PAUSED a UNPAUSED.
+
+Configurazione finale: trigger periodico **2 HOURS**, max_concurrent_runs=1, coda abilitata, retry Jobs automatici disabilitati. Timeout 06/07/08/13 invariati: **2340 / 1680 / 720 / 780 secondi**. Il benchmark precedente era 44.78 minuti; la somma dei timeout è 92 minuti, inferiore alle due ore, ma queue/setup o crescita dello storico impediscono di trattarla come garanzia assoluta di latenza. Il trigger periodico non espone timezone o un prossimo avvio esatto via jobs/get; non è stato sostituito con cron. Europe/Rome è usato per visualizzare gli istanti, mantenendo gli intervalli periodici della piattaforma.
+
+### Run osservati
+
+| Run | Trigger | Inizio UTC | Fine UTC | Durata (s) |
+| --- | --- | --- | --- | ---: |
+| 28749734220193 | ONE_TIME | 2026-10-26T11:04:43.835000+00:00 | 2026-10-26T11:55:23.916000+00:00 | 3040.081 |
+| 113160267318301 | PERIODIC | 2026-10-26T11:53:35.540000+00:00 | 2026-10-26T12:43:38.752000+00:00 | 3003.212 |
+
+Dopo cinque minuti senza un avvio periodico osservato e senza un orario API disponibile è stata eseguita una sola run manuale equivalente, autorizzata come fallback dopo l’attivazione. Nessun secondo avvio manuale. Una run automatica e una run manuale equivalente verificate.
+
+| Run | Task | Setup (s) | Esecuzione (s) | Retry Jobs | Esito |
+| --- | --- | ---: | ---: | ---: | --- |
+| 28749734220193 | silver_06 | 4.000 | 1169.000 | 0 | SUCCESS |
+| 28749734220193 | enrichment_07 | 2.000 | 825.000 | 0 | SUCCESS |
+| 28749734220193 | scoring_input_08 | 2.000 | 342.000 | 0 | SUCCESS |
+| 28749734220193 | operational_gold_13 | 2.000 | 690.000 | 0 | SUCCESS |
+| 113160267318301 | silver_06 | 119.000 | 1190.000 | 0 | SUCCESS |
+| 113160267318301 | enrichment_07 | 2.000 | 845.000 | 0 | SUCCESS |
+| 113160267318301 | scoring_input_08 | 2.000 | 330.000 | 0 | SUCCESS |
+| 113160267318301 | operational_gold_13 | 2.000 | 509.000 | 0 | SUCCESS |
+
+Nessun overlap di esecuzione tra run downstream e nessun retry Jobs osservato. La run PERIODIC ha queue_duration=115.763s (task 06: 115.473s), con motivo MAX_CONCURRENT_RUNS_REACHED. Il timestamp start_time include la coda: non indica sovrapposizione di compute. La run manuale e gli altri task non espongono queue_duration; valori omessi non sono stati interpretati come zero. Gli stati BLOCKED dei task dipendenti sono attese del DAG, non errori. La coda resta abilitata e max_concurrent_runs=1 resta il vincolo di concorrenza.
+
+### Ultimo batch validato dopo il run
+
+| Layer | Watermark UTC | Righe | Versione Delta |
+| --- | --- | ---: | ---: |
+| bronze | 2026-10-26T12:56:25+00:00 | 57,904,290 | in avanzamento |
+| silver | 2026-10-26T11:43:32+00:00 | 57,493,151 | 13 |
+| enrichment | 2026-10-26T11:43:32+00:00 | 57,493,151 | 13 |
+| scoring | 2026-10-26T11:43:32+00:00 | 23,039 | 9 |
+
+Gold refresh **2026-10-26T12:43:28.368Z**, quality_status **PASSED**, dashboard_ready **YES**. Manifest confrontato con tutte le versioni Gold effettive; release ID coerente nelle cinque tabelle operative. Schemi invariati. Feature storiche, labeled, prediction ML e le due tabelle Gold del modello non sono state riscritte.
+
+Scoring: 23,039 righe, zero duplicati grain, 47 feature (42 numeriche + 5 categoriche), hash `11682b3cc1ab5c1d8440af4f6294e932e815126c3dd86ab609f4d5f8f35c41a5` invariato, zero NaN/inf e un solo batch/source version/preparazione. Lineage source enrichment v13, scoring v9.
+
+Lag al controllo **2026-10-26T13:00:51.835344+00:00**: Bronze → Silver **4373s**; Silver → enrichment **0s**; enrichment → scoring **0s**. Preparazione scoring → refresh Gold **831.446s**; watermark feed scoring → refresh Gold **3596.368s**. Questi sono due intervalli diversi. Bronze continua ad avanzare durante il full rebuild.
+
+### Quote Free Edition e limite della dimostrazione
+
+La [documentazione ufficiale](https://docs.databricks.com/aws/en/getting-started/free-edition-limitations) limita Free Edition a serverless e cinque task Job concorrenti per account; il fair-use può sospendere compute fino al reset giornaliero o, in casi estremi, mensile. Non esiste SLA. Nelle 25 run recenti lette al precheck non comparivano errori quota/resource exhaustion; nessun run era attivo prima della prova.
+
+`system.billing.usage` è leggibile, ma mostra consumi contabilizzati, non l’entitlement Free residuo. Al precheck JOBS riportava 13.734869627 DBU del 26 ottobre fino alle 07:20 UTC: erano dati in ritardo, anteriori a questa attivazione. Non dimostrano headroom sufficiente. La quota residua affidabile resta **NON VERIFICABILE**. Per il nuovo Job le righe di billing non erano ancora disponibili alla verifica post-run; questo non significa costo zero.
+
+Nessun errore quota nei run verificati. Questo prova il funzionamento nell’intervallo osservato, non la sostenibilità di 12 rebuild al giorno o di un mese intero. Occorre continuare a monitorare durata, code, failure e consumo; in caso di quota/sostenibilità il Job va rimesso PAUSED senza retry. Non ridurre l’intervallo sotto due ore. Seconda esecuzione osservata e validata: sì. Batches con nuovi watermark mantengono grain e schemi senza accumulare duplicati; non è una prova di uguaglianza su input identici fissati.
+
+Job 05 invariato. Nessun training, model scoring, sklearn, FastAPI o n8n. Nessuna modifica o nuova pubblicazione della dashboard, né modifica a PDF o screenshot in questa fase: gli export restano snapshot statiche del watermark precedente anche quando il dashboard live legge un nuovo rilascio Gold.
+
+### Confronto baseline e due release
+
+La validazione manuale usa Delta time travel al completamento (`2026-10-26T11:55:23.916Z`); la seconda verifica legge il rilascio PERIODIC. Non sono stati confusi i due snapshot.
+
+| Metrica | Prima | Manuale | PERIODIC |
+| --- | --- | --- | --- |
+| Feed operativo | 1793001463 | 1793012260 | 1793015012 |
+| Righe osservazioni | 56941882 | 57370093 | 57493151 |
+| Refresh Gold | 2026-10-26T09:27:31.249Z | 2026-10-26T11:55:12.206Z | 2026-10-26T12:43:28.368Z |
+| Delta silver.realtime_trip_stop_observations | 10 | 11 | 13 |
+| Delta silver.realtime_enriched_observations | 11 | 12 | 13 |
+| Delta features.next_stop_delay_scoring | 5 | 7 | 9 |
+| Delta gold.executive_overview | 2 | 3 | 4 |
+
+### Tempi dei task (UTC)
+
+| Run | Task | Start | End | Durata wall (s) | Queue (s) |
+| --- | --- | --- | --- | ---: | --- |
+| 28749734220193 | silver_06 | 2026-10-26T11:04:43.870000+00:00 | 2026-10-26T11:24:17.317000+00:00 | 1173.447 | non esposta |
+| 28749734220193 | enrichment_07 | 2026-10-26T11:24:17.727000+00:00 | 2026-10-26T11:38:05.818000+00:00 | 828.091 | non esposta |
+| 28749734220193 | scoring_input_08 | 2026-10-26T11:38:06.269000+00:00 | 2026-10-26T11:43:50.384000+00:00 | 344.115 | non esposta |
+| 28749734220193 | operational_gold_13 | 2026-10-26T11:43:50.842000+00:00 | 2026-10-26T11:55:23.420000+00:00 | 692.578 | non esposta |
+| 113160267318301 | silver_06 | 2026-10-26T11:53:35.561000+00:00 | 2026-10-26T12:15:25.306000+00:00 | 1309.745 | 115.473 |
+| 113160267318301 | enrichment_07 | 2026-10-26T12:15:25.718000+00:00 | 2026-10-26T12:29:33.168000+00:00 | 847.450 | non esposta |
+| 113160267318301 | scoring_input_08 | 2026-10-26T12:29:33.561000+00:00 | 2026-10-26T12:35:05.959000+00:00 | 332.398 | non esposta |
+| 113160267318301 | operational_gold_13 | 2026-10-26T12:35:06.381000+00:00 | 2026-10-26T12:43:38.295000+00:00 | 511.914 | non esposta |
+
+Lag della release manuale: Bronze snapshot a fine run -> Silver 2752s; Silver -> enrichment 0s; enrichment -> scoring 0s; preparazione scoring -> Gold 1022.068s. Il lag Bronze della verifica PERIODIC usa Bronze corrente al controllo, non il suo timestamp di fine run.

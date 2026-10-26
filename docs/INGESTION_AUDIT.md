@@ -1,6 +1,6 @@
 # Contratto di audit dell'ingestion GTFS-Realtime
 
-**Stato runtime al 26 ottobre 2026:** Silver osservazioni v10, enrichment v10 (56,941,882 righe) e input scoring v5 (26,327 righe) allineati al feed **1793001463 / 2026-10-26T08:57:43+01:00**. Gold operativo validato, refresh **2026-10-26T09:27:31.249044+00:00**. Sono dati del batch validato, non una promessa di latenza live. Prediction e metriche Spark restano evidenze storiche. Job downstream separato predisposto, **PAUSED**, con proposta iniziale ogni 2 ore basata sul benchmark di circa 45 minuti; ingestion 05 invariata ogni 10 minuti. [Evidenze, limiti e orchestrazione](DOWNSTREAM_RUNTIME_ROLLOUT.md).
+**Stato runtime dopo attivazione del 26 ottobre 2026:** Job downstream `1084265487272426` **ACTIVE**, trigger periodico ogni **2 ore**, 06 → 07 → input scoring 08 → Gold operativo 13. Una run automatica e una run manuale equivalente verificate. Ultimo batch validato: feed **1793015012 / 2026-10-26T12:43:32+01:00**, Silver osservazioni v13, enrichment v13 (57,493,151 righe), scoring v9 (23,039 righe). Gold refresh **2026-10-26T12:43:28.368Z**, qualità PASSED e dashboard_ready YES. La quota Free residua non è verificabile; sostenibilità di lungo periodo e SLA non dimostrati. Ingestion 05 ogni 10 minuti invariata; prediction e metriche ML restano storiche. [Evidenze e limiti](DOWNSTREAM_RUNTIME_ROLLOUT.md).
 
 
 ## Confine dell'architettura operativa
@@ -8,8 +8,8 @@
 L'ingestion resta responsabilità di Databricks. L'inventario in sola lettura del 25 ottobre
 2026 conferma che il Job periodico esistente esegue solo il notebook 05; non aggiorna
 06 Silver, 07 enrichment o 08 di preparazione degli input di scoring. La freschezza dei
-dati (freshness) Bronze non implica quindi feature aggiornate. Un DAG downstream e un
-contratto di readiness, da autorizzare separatamente, sono specificati nell'[handoff
+dati (freshness) Bronze non implica quindi feature aggiornate. Il DAG downstream successivamente autorizzato e il
+contratto di readiness sono specificati nell'[handoff
 operativo](OPERATIONAL_ML_HANDOFF.md). n8n coordinerà chiamate FastAPI/retry/alert esterni
 dopo la readiness, senza sostituire questa pianificazione ingestion. La PR di handoff
 architetturale non modificava impostazioni runtime. Il rollout successivo del 26 ottobre ha ora validato il downstream, senza cambiare il Job ingestion esistente.
@@ -160,3 +160,9 @@ La run periodica 1030587734568633 (evidenze runtime conservate privatamente) è 
 | service_alerts | 128 | 128 | 128 | 0 |
 
 Ogni nuovo timestamp feed era più recente di quello della run manuale. Nelle nuove snapshot non erano presenti chiavi duplicate e gli incrementi totali delle righe coincidevano con i tre conteggi di append. Questo conferma l'ingestion pianificata operativa nella finestra osservata, non garantisce assenza di futuri errori dei feed o dell'infrastruttura. I limiti verificati solo offline sopra indicati restano aperti; non sono stati usati ulteriori replay in produzione o iniezioni di errore.
+
+## Attivazione del Job downstream, 26 ottobre 2026
+
+**Stato runtime dopo attivazione del 26 ottobre 2026:** Job downstream `1084265487272426` **ACTIVE**, trigger periodico ogni **2 ore**, 06 → 07 → input scoring 08 → Gold operativo 13. Una run automatica e una run manuale equivalente verificate. Ultimo batch validato: feed **1793015012 / 2026-10-26T12:43:32+01:00**, Silver osservazioni v13, enrichment v13 (57,493,151 righe), scoring v9 (23,039 righe). Gold refresh **2026-10-26T12:43:28.368Z**, qualità PASSED e dashboard_ready YES. La quota Free residua non è verificabile; sostenibilità di lungo periodo e SLA non dimostrati. Ingestion 05 ogni 10 minuti invariata; prediction e metriche ML restano storiche. [Evidenze e limiti](DOWNSTREAM_RUNTIME_ROLLOUT.md).
+
+Il Job ingestion 05 (`195066091322974`) conserva esattamente impostazioni e trigger precedenti. Il downstream legge versioni fissate e usa max_concurrent_runs=1, coda abilitata e nessun retry Jobs automatico. Il trigger Simple/periodic non espone timezone: Europe/Rome è il fuso di visualizzazione del report, non una proprietà cron inventata. Nessun task training o model scoring è stato aggiunto.

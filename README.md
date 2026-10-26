@@ -1,17 +1,17 @@
 # Rome Public Transport Reliability & Delay Prediction
 
-**Stato runtime al 26 ottobre 2026:** Silver osservazioni v10, enrichment v10 (56,941,882 righe) e input scoring v5 (26,327 righe) allineati al feed **1793001463 / 2026-10-26T08:57:43+01:00**. Gold operativo validato, refresh **2026-10-26T09:27:31.249044+00:00**. Sono dati del batch validato, non una promessa di latenza live. Prediction e metriche Spark restano evidenze storiche. Job downstream separato predisposto, **PAUSED**, con proposta iniziale ogni 2 ore basata sul benchmark di circa 45 minuti; ingestion 05 invariata ogni 10 minuti. [Evidenze, limiti e orchestrazione](docs/DOWNSTREAM_RUNTIME_ROLLOUT.md).
+**Stato runtime dopo attivazione del 26 ottobre 2026:** Job downstream `1084265487272426` **ACTIVE**, trigger periodico ogni **2 ore**, 06 → 07 → input scoring 08 → Gold operativo 13. Una run automatica e una run manuale equivalente verificate. Ultimo batch validato: feed **1793015012 / 2026-10-26T12:43:32+01:00**, Silver osservazioni v13, enrichment v13 (57,493,151 righe), scoring v9 (23,039 righe). Gold refresh **2026-10-26T12:43:28.368Z**, qualità PASSED e dashboard_ready YES. La quota Free residua non è verificabile; sostenibilità di lungo periodo e SLA non dimostrati. Ingestion 05 ogni 10 minuti invariata; prediction e metriche ML restano storiche. [Evidenze e limiti](docs/DOWNSTREAM_RUNTIME_ROLLOUT.md).
 
 
 Un lakehouse Databricks per i feed del trasporto pubblico di Roma, con analisi storiche dell'affidabilità, ricerca predittiva e dashboard di Business Intelligence. Il nuovo target operativo separa i dati Databricks dal futuro runtime ML FastAPI/Python/scikit-learn.
 
 **Stack:** Databricks · Apache Spark / PySpark · Delta Lake · Unity Catalog · MLflow · Databricks SQL · Databricks AI/BI Dashboards · Python · SQL
 
-**Stato al 26 ottobre 2026:** ingestion Bronze pianificata e operativa; Silver, enrichment, input scoring e Gold operativo validati sul batch del 26 ottobre. Il nuovo Job downstream è predisposto in pausa, con proposta iniziale ogni 2 ore; non si dichiara ancora aggiornamento downstream automatico. Persistence e Random Forest restano risultati storici di riferimento; FastAPI/sklearn è il futuro runtime ML operativo. [Evidenze runtime e lag](docs/DOWNSTREAM_RUNTIME_ROLLOUT.md), [decisione](docs/ARCHITECTURE_DECISIONS.md), [contratti](docs/OPERATIONAL_ML_HANDOFF.md), [roadmap](docs/ROADMAP.md).
+**Stato al 26 ottobre 2026:** ingestion attiva ogni 10 minuti; Job downstream ACTIVE ogni 2 ore, con validazioni e limiti descritti nel [report runtime](docs/DOWNSTREAM_RUNTIME_ROLLOUT.md). Una run automatica e una run manuale equivalente verificate. Il modello Spark resta storico e FastAPI/sklearn resta futuro.
 
 ## Anteprima Dashboard
 
-**Export aggiornati il 26 ottobre 2026:** PDF completo e quattro screenshot sono estratti dalla dashboard pubblicata in tema chiaro. Overview, Reliability e Propagation descrivono i dati operativi fino al feed **26 ottobre 08:57 Europe/Rome**; Predictive, Model Performance e i riquadri predittivi di Overview restano evidenze Spark storiche del 2 ottobre. Non si dichiara inference ML live. Il PDF include la correzione della label Propagation di [PR #9](https://github.com/matteocavo/rome-public-transport-reliability/pull/9), già pubblicata nel workspace e ancora da integrare nel JSON di main. [Provenienza e verifiche](dashboard/databricks/README.md).
+**Export aggiornati il 26 ottobre 2026:** PDF completo e quattro screenshot sono estratti dalla dashboard pubblicata in tema chiaro. Overview, Reliability e Propagation descrivono i dati operativi fino al feed **26 ottobre 08:57 Europe/Rome**; Predictive, Model Performance e i riquadri predittivi di Overview restano evidenze Spark storiche del 2 ottobre. Non si dichiara inference ML live. Il PDF include la correzione della label Propagation di [PR #9](https://github.com/matteocavo/rome-public-transport-reliability/pull/9), già pubblicata nel workspace e integrata nel JSON di main. [Provenienza e verifiche](dashboard/databricks/README.md).
 
 <p align="center">
   <img src="dashboard/databricks/screenshots/overview.png"
@@ -41,7 +41,7 @@ Google AI Studio: futura generazione e iterazione UX/UI React
 Dashboard AI/BI / Power BI separato: analisi curate, con date esplicite
 ```
 
-Le tabelle Delta sono governate tramite Unity Catalog. La dashboard interroga esclusivamente Gold. Il diagramma descrive il target: ingestion è pianificata; la catena downstream è validata manualmente e il Job separato è in pausa. Backend, n8n e frontend restano futuri. Il tracciamento MLflow e i notebook Spark restano **ML storico / sperimentale**, conservati come ricerca e riferimento. Spark PipelineModel non è il runtime operativo target: smoke bloccato dalla whitelist Spark Connect e classic compute non disponibile nel workspace Free. [ADR-001](docs/ARCHITECTURE_DECISIONS.md).
+Le tabelle Delta sono governate tramite Unity Catalog. La dashboard interroga esclusivamente Gold. Il diagramma descrive il target: ingestion e Job downstream sono attivi, rispettivamente ogni 10 minuti e 2 ore; le evidenze di esecuzione e i limiti Free sono nel report runtime. Backend, n8n e frontend restano futuri. Il tracciamento MLflow e i notebook Spark restano **ML storico / sperimentale**, conservati come ricerca e riferimento. Spark PipelineModel non è il runtime operativo target: smoke bloccato dalla whitelist Spark Connect e classic compute non disponibile nel workspace Free. [ADR-001](docs/ARCHITECTURE_DECISIONS.md).
 
 ## Fonti dei dati
 
@@ -322,12 +322,12 @@ Otto date di servizio non dimostrano generalizzazione sul lungo periodo o sull'i
 
 ## Sviluppi futuri
 
-Seguire la [roadmap operativa](docs/ROADMAP.md): attivazione del Job downstream predisposto, futuro repository `rome-mobility-intelligence`, FastAPI/sklearn con nuova valutazione/persistenza, inference, prediction history, n8n, serving/API, React/Google AI Studio, AI insight e Power BI separato. Questo repository mantiene ingestion, lakehouse, contratti, analytics, Gold e metadati di freshness. Nessun repository app è creato da questa PR.
+Seguire la [roadmap operativa](docs/ROADMAP.md): monitoraggio del Job downstream attivo e della sostenibilità Free, futuro repository `rome-mobility-intelligence`, FastAPI/sklearn con nuova valutazione/persistenza, inference, prediction history, n8n, serving/API, React/Google AI Studio, AI insight e Power BI separato. Questo repository mantiene ingestion, lakehouse, contratti, analytics, Gold e metadati di freshness. Nessun repository app è creato da questa PR.
 
 ## Stato del progetto
 
-**Implementati e validati storicamente:** Bronze/Silver, associazione causale delle posizioni, Feature Engineering, etichettatura futura e filtro di qualità, esperimenti MLflow, selezione su validation, TEST congelato, replay batch, Gold, SQL e dashboard AI/BI. Ingestion pianificata operativa; il percorso downstream operativo è ora validato manualmente; il suo Job resta in pausa. PDF e quattro screenshot riallineati alla dashboard pubblicata del 26 ottobre, con ambiti operativo e modello storico distinti.
+**Implementati e validati storicamente:** Bronze/Silver, associazione causale delle posizioni, Feature Engineering, etichettatura futura e filtro di qualità, esperimenti MLflow, selezione su validation, TEST congelato, replay batch, Gold, SQL e dashboard AI/BI. Ingestion pianificata operativa; il Job downstream operativo è ACTIVE ogni 2 ore, con i run verificati e i limiti di osservazione riportati sopra. PDF e quattro screenshot riallineati alla dashboard pubblicata del 26 ottobre, con ambiti operativo e modello storico distinti.
 
 **Percorso sostituito:** deployment Spark ML, conservato come implementazione storica/di riferimento; runtime operativo futuro FastAPI/sklearn.
 
-**Da completare:** attivazione controllata del Job downstream dopo verifica delle quote, backend operativo e presentazione app; mantenimento degli export allineati ai successivi rilasci della dashboard. Non si dichiara un'API live, un modello operativo già distribuito o adozione cittadina.
+**Da completare:** monitoraggio della sostenibilità e della freshness del Job downstream attivo, backend operativo e presentazione app; mantenimento degli export allineati ai successivi rilasci della dashboard. Non si dichiara un'API live, un modello operativo già distribuito o adozione cittadina.
