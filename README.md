@@ -331,3 +331,12 @@ Seguire la [roadmap operativa](docs/ROADMAP.md): monitoraggio del Job downstream
 **Percorso sostituito:** deployment Spark ML, conservato come implementazione storica/di riferimento; runtime operativo futuro FastAPI/sklearn.
 
 **Da completare:** monitoraggio della sostenibilità e della freshness del Job downstream attivo, backend operativo e presentazione app; mantenimento degli export allineati ai successivi rilasci della dashboard. Non si dichiara un'API live, un modello operativo già distribuito o adozione cittadina.
+
+## License and Data Attribution
+
+Original source code is Open Source under the [Apache License 2.0](LICENSE).
+Copyright 2026 Matteo Cavo.
+
+Third-party components and public transport data remain under their applicable
+upstream licenses. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for Roma
+data attribution, licensing exceptions and the scope of the original work.
