@@ -80,14 +80,49 @@ print(source_counts)
 from pyspark.sql import functions as F
 
 
+# At least 99.9% of observations must retain a date, both globally and in
+# EVERY feed snapshot. A per-snapshot budget prevents history diluting an outage.
+# Unresolvable observations stay in pinned Bronze; no calendar date is invented.
+MAX_INVALID_SERVICE_DATE_RATE = 0.001
+
+
+def normalize_service_date(value):
+    """Classify diagnostic samples; accept only real Gregorian YYYYMMDD dates."""
+    import re
+    from datetime import datetime
+    if value is None:
+        return None
+    text = str(value).strip(" ")
+    if not re.fullmatch(r"[0-9]{8}", text):
+        return None
+    try:
+        return datetime.strptime(text, "%Y%m%d").date()
+    except ValueError:
+        return None
+
+
+def validate_service_date_quality(total, invalid, repaired, worst_snapshot_rate):
+    """Exclusions are bounded; invalid dates can never reach Silver."""
+    import math
+    if (total <= 0 or invalid < 0 or invalid >= total or repaired < 0
+            or repaired > total - invalid or not math.isfinite(worst_snapshot_rate)
+            or not 0 <= worst_snapshot_rate <= 1):
+        raise ValueError("trip_updates: invalid service-date quality metrics; write blocked")
+    if (invalid / total > MAX_INVALID_SERVICE_DATE_RATE
+            or worst_snapshot_rate > MAX_INVALID_SERVICE_DATE_RATE):
+        raise ValueError("trip_updates: service-date exclusion budget exceeded; write blocked")
+    return {"total_rows_checked": total, "valid_rows": total - invalid - repaired,
+            "invalid_service_date_rows": invalid, "repaired_rows": repaired,
+            "excluded_rows": invalid, "invalid_percentage": 100.0 * invalid / total,
+            "worst_snapshot_invalid_percentage": 100.0 * worst_snapshot_rate,
+            "max_invalid_percentage": 100.0 * MAX_INVALID_SERVICE_DATE_RATE,
+            "quality_status": "PASSED"}
+
+
 def to_tolerant_date(column_name):
-    return (
-        F.when(
-            F.trim(F.col(column_name).cast("string")).rlike(r"^\d{8}$"),
-            F.to_date(F.col(column_name).cast("string"), "yyyyMMdd")
-        )
-        .otherwise(None)
-    )
+    text = F.trim(F.col(column_name).cast("string"))
+    return F.when(text.rlike(r"^[0-9]{8}$"),
+                  F.try_to_timestamp(text, F.lit("yyyyMMdd")).cast("date")).otherwise(None)
 
 
 def parse_epoch_to_timestamp(column_name):
@@ -103,6 +138,9 @@ trip_updates_silver = (
     trip_updates
     .withColumn("feed_datetime", F.to_timestamp(F.from_unixtime(F.col("feed_timestamp"))))
     .withColumn("service_date", to_tolerant_date("start_date"))
+    .withColumn("_service_date_raw", F.col("start_date"))
+    .withColumn("_service_date_repaired", F.col("service_date").isNotNull() &
+                (F.col("start_date") != F.trim(F.col("start_date"))))
     .withColumn("arrival_datetime", parse_epoch_to_timestamp("arrival_time"))
     .withColumn("departure_datetime", parse_epoch_to_timestamp("departure_time"))
     .withColumn("arrival_delay_minutes", F.col("arrival_delay") / F.lit(60.0))
@@ -114,6 +152,8 @@ trip_updates_silver = (
         "trip_id",
         "route_id",
         "service_date",
+        "_service_date_raw",
+        "_service_date_repaired",
         "start_time",
         "direction_id",
         "vehicle_id",
@@ -222,10 +262,41 @@ vehicle_positions_silver = deduplicate_latest(
 
 # COMMAND ----------
 
+date_metrics = trip_updates_silver.agg(
+    F.count("*").alias("total"),
+    F.count(F.when(F.col("service_date").isNull(), 1)).alias("invalid"),
+    F.count(F.when(F.col("_service_date_repaired"), 1)).alias("repaired"),
+).first().asDict()
+worst_snapshot_rate = 0.0
+if date_metrics["invalid"]:
+    snapshot_quality = trip_updates_silver.groupBy("feed_timestamp").agg(
+        F.count("*").alias("total"),
+        F.count(F.when(F.col("service_date").isNull(), 1)).alias("invalid"),
+    )
+    worst_snapshot_rate = snapshot_quality.agg(
+        F.max(F.col("invalid") / F.col("total"))).first()[0]
+    # Date-only, bounded diagnostics; observation identifiers/payloads are not logged.
+    samples = trip_updates_silver.filter(F.col("service_date").isNull()).select(
+        "_service_date_raw").distinct().limit(10).collect()
+    print({"service_date_invalid_samples": [
+        {"value": str(row[0])[:32], "parseable": normalize_service_date(row[0]) is not None}
+        for row in samples]})
+print({"service_date_quality_before_gate": date_metrics,
+       "worst_snapshot_invalid_rate": worst_snapshot_rate})
+try:
+    service_date_quality = validate_service_date_quality(
+        date_metrics["total"], date_metrics["invalid"], date_metrics["repaired"],
+        worst_snapshot_rate)
+except ValueError:
+    print({"service_date_quality_status": "REJECTED", "write_blocked": True})
+    raise
+print({"service_date_quality": service_date_quality})
+trip_updates_silver = trip_updates_silver.filter(F.col("service_date").isNotNull()).drop(
+    "_service_date_raw", "_service_date_repaired")
+if trip_updates_silver.filter(F.col("service_date").isNull()).limit(1).count():
+    raise ValueError("trip_updates: invalid service date escaped isolation; write blocked")
 for name, frame in [("trip_updates", trip_updates_silver), ("vehicle_positions", vehicle_positions_silver)]:
-    if name == "trip_updates" and frame.filter(F.col("service_date").isNull()).limit(1).count():
-        raise ValueError(f"{name}: invalid service date; write blocked")
-    # VehiclePosition trip/service dates are optional; preserve NULL as the original parser does.
+    # VehiclePosition trip/service dates remain optional, as in the original parser.
     print({"silver_input": name, "rows": frame.count(),
            "unknown_service_dates": frame.filter(F.col("service_date").isNull()).count()})
 
