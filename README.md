@@ -1,5 +1,32 @@
 # Rome Public Transport Reliability & Delay Prediction
 
+Lakehouse Databricks per analizzare l'affidabilità del trasporto pubblico di Roma a partire
+dai feed ufficiali GTFS e GTFS-Realtime: ingestion verificabile, feature engineering
+temporale, modellazione storica dei ritardi e output BI documentati.
+
+**[Evidenze della dashboard e PDF](dashboard/databricks/README.md)** ·
+[Decisioni architetturali](docs/ARCHITECTURE_DECISIONS.md) ·
+[Metodologia](docs/PACE.md) · [Limiti](#limiti)
+
+La dashboard Databricks interattiva richiede autenticazione; gli screenshot e il PDF nel
+repository sono export statici datati. Distinguono i dati operativi di affidabilità dalle
+previsioni storiche Spark e non dimostrano inferenza ML live, generalizzazione a lungo
+termine né adozione da parte degli operatori cittadini.
+
+Gli stati operativi in questo README sono registrazioni datate, non lo stato corrente.
+L'export della dashboard del 26 ottobre 2026 (refresh Gold 10:27 Europe/Rome) registra il
+Job a valle come in pausa; la successiva registrazione runtime qui sotto (feed 12:43
+Europe/Rome dello stesso giorno) lo registra come ACTIVE. Vedi le
+[evidenze runtime a valle](docs/DOWNSTREAM_RUNTIME_ROLLOUT.md); nessuna delle due è uno SLA
+né una dichiarazione sulla freschezza attuale.
+
+L'[applicazione Rome Mobility Intelligence](https://github.com/matteocavo/rome-mobility-intelligence),
+separata, documenta ora il runtime FastAPI/scikit-learn e la demo pubblica. I report di
+rollout sotto conservano date, evidenze e limiti originali; i riferimenti a un'applicazione
+futura descrivono le fasi di implementazione registrate.
+
+## Evidenze operative documentate
+
 **Stato runtime dopo attivazione del 26 ottobre 2026:** Job downstream `1084265487272426` **ACTIVE**, trigger periodico ogni **2 ore**, 06 → 07 → input scoring 08 → Gold operativo 13. Una run automatica e una run manuale equivalente verificate. Ultimo batch validato: feed **1793015012 / 2026-10-26T12:43:32+01:00**, Silver osservazioni v13, enrichment v13 (57,493,151 righe), scoring v9 (23,039 righe). Gold refresh **2026-10-26T12:43:28.368Z**, qualità PASSED e dashboard_ready YES. La quota Free residua non è verificabile; sostenibilità di lungo periodo e SLA non dimostrati. Ingestion 05 ogni 10 minuti invariata; prediction e metriche ML restano storiche. [Evidenze e limiti](docs/DOWNSTREAM_RUNTIME_ROLLOUT.md).
 
 
