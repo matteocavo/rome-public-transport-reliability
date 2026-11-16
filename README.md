@@ -1,5 +1,31 @@
 # Rome Public Transport Reliability & Delay Prediction
 
+A Databricks lakehouse for analysing Rome public-transport reliability from
+official GTFS and GTFS-Realtime feeds: auditable ingestion, temporal feature
+engineering, historical delay modelling and documented BI outputs.
+
+**[View the dashboard evidence and PDF](dashboard/databricks/README.md)** ·
+[Architecture decisions](docs/ARCHITECTURE_DECISIONS.md) ·
+[Methodology](docs/PACE.md) · [Limitations](#limiti)
+
+The interactive Databricks dashboard requires authentication; the committed
+screenshots and PDF are dated static exports. They distinguish operational
+reliability data from historical Spark predictions and do not establish live ML
+inference, long-term generalization or adoption by city operators.
+
+Operational states in this README are dated records, not current status. The
+dashboard export of 26 October 2026 (Gold refresh 10:27 Europe/Rome) records the
+downstream Job as paused; the later runtime record below (feed 12:43 Europe/Rome the
+same day) records it as ACTIVE. See the [downstream runtime evidence](docs/DOWNSTREAM_RUNTIME_ROLLOUT.md);
+neither record is an SLA or a statement about current freshness.
+
+The separate [Rome Mobility Intelligence application](https://github.com/matteocavo/rome-mobility-intelligence)
+now documents the FastAPI/scikit-learn runtime and public demo. The Italian
+rollout reports below retain their original dates, evidence and limitations;
+references to a future application describe those recorded implementation stages.
+
+## Evidenze operative documentate
+
 **Stato runtime dopo attivazione del 26 ottobre 2026:** Job downstream `1084265487272426` **ACTIVE**, trigger periodico ogni **2 ore**, 06 → 07 → input scoring 08 → Gold operativo 13. Una run automatica e una run manuale equivalente verificate. Ultimo batch validato: feed **1793015012 / 2026-10-26T12:43:32+01:00**, Silver osservazioni v13, enrichment v13 (57,493,151 righe), scoring v9 (23,039 righe). Gold refresh **2026-10-26T12:43:28.368Z**, qualità PASSED e dashboard_ready YES. La quota Free residua non è verificabile; sostenibilità di lungo periodo e SLA non dimostrati. Ingestion 05 ogni 10 minuti invariata; prediction e metriche ML restano storiche. [Evidenze e limiti](docs/DOWNSTREAM_RUNTIME_ROLLOUT.md).
 
 
