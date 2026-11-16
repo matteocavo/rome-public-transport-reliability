@@ -1,28 +1,29 @@
 # Rome Public Transport Reliability & Delay Prediction
 
-A Databricks lakehouse for analysing Rome public-transport reliability from
-official GTFS and GTFS-Realtime feeds: auditable ingestion, temporal feature
-engineering, historical delay modelling and documented BI outputs.
+Lakehouse Databricks per analizzare l'affidabilità del trasporto pubblico di Roma a partire
+dai feed ufficiali GTFS e GTFS-Realtime: ingestion verificabile, feature engineering
+temporale, modellazione storica dei ritardi e output BI documentati.
 
-**[View the dashboard evidence and PDF](dashboard/databricks/README.md)** ·
-[Architecture decisions](docs/ARCHITECTURE_DECISIONS.md) ·
-[Methodology](docs/PACE.md) · [Limitations](#limiti)
+**[Evidenze della dashboard e PDF](dashboard/databricks/README.md)** ·
+[Decisioni architetturali](docs/ARCHITECTURE_DECISIONS.md) ·
+[Metodologia](docs/PACE.md) · [Limiti](#limiti)
 
-The interactive Databricks dashboard requires authentication; the committed
-screenshots and PDF are dated static exports. They distinguish operational
-reliability data from historical Spark predictions and do not establish live ML
-inference, long-term generalization or adoption by city operators.
+La dashboard Databricks interattiva richiede autenticazione; gli screenshot e il PDF nel
+repository sono export statici datati. Distinguono i dati operativi di affidabilità dalle
+previsioni storiche Spark e non dimostrano inferenza ML live, generalizzazione a lungo
+termine né adozione da parte degli operatori cittadini.
 
-Operational states in this README are dated records, not current status. The
-dashboard export of 26 October 2026 (Gold refresh 10:27 Europe/Rome) records the
-downstream Job as paused; the later runtime record below (feed 12:43 Europe/Rome the
-same day) records it as ACTIVE. See the [downstream runtime evidence](docs/DOWNSTREAM_RUNTIME_ROLLOUT.md);
-neither record is an SLA or a statement about current freshness.
+Gli stati operativi in questo README sono registrazioni datate, non lo stato corrente.
+L'export della dashboard del 26 ottobre 2026 (refresh Gold 10:27 Europe/Rome) registra il
+Job a valle come in pausa; la successiva registrazione runtime qui sotto (feed 12:43
+Europe/Rome dello stesso giorno) lo registra come ACTIVE. Vedi le
+[evidenze runtime a valle](docs/DOWNSTREAM_RUNTIME_ROLLOUT.md); nessuna delle due è uno SLA
+né una dichiarazione sulla freschezza attuale.
 
-The separate [Rome Mobility Intelligence application](https://github.com/matteocavo/rome-mobility-intelligence)
-now documents the FastAPI/scikit-learn runtime and public demo. The Italian
-rollout reports below retain their original dates, evidence and limitations;
-references to a future application describe those recorded implementation stages.
+L'[applicazione Rome Mobility Intelligence](https://github.com/matteocavo/rome-mobility-intelligence),
+separata, documenta ora il runtime FastAPI/scikit-learn e la demo pubblica. I report di
+rollout sotto conservano date, evidenze e limiti originali; i riferimenti a un'applicazione
+futura descrivono le fasi di implementazione registrate.
 
 ## Evidenze operative documentate
 
