@@ -1,8 +1,11 @@
 # Silver 06: reviewed service-date quarantine recovery
 
-Status: local implementation only. No workspace import, Delta write, job execution,
-trigger change or deployment has been performed. This is a controlled recovery
-candidate, not evidence that Spark/Delta runtime recovery has passed.
+Status: the implementation prepared in commit
+`16db48b5c6fbfe018f242e0d3b9ab5c1e31b01dc` has been deployed and validated on
+Databricks through separately authorized controlled runs. Notebook source SHA-256:
+`60e8504c1fa1dafe1a1b895803f0a5dd07e279f6f05c3d8cfcd1bce875014c20`.
+The repository/workspace source comparison is byte-for-byte; this documentation
+update does not change the notebook, exception registry, model or write gates.
 
 ## Verified cause and scope
 
@@ -70,7 +73,35 @@ These are not actual Spark/Delta integration tests. Existing 30 mirror-fixture
 test results remain preserved in the external handoff and were not rerun.
 No package installation or compute is necessary for local tests.
 
-## Future deployment: requires separate authorization
+## Completed Databricks validation
+
+The initial isolated Silver run `1016628906824827` succeeded on 21 November 2026.
+The controlled cycle on 22 November also succeeded: Silver
+`347496418190254`, enrichment `815655041923187`, scoring input
+`1114139366189442`, and operational Gold `46835826666572`.
+
+Silver reported quality PASSED, 32 quarantined rows, two ordinary invalid rows
+excluded, zero duplicate observation keys and zero future vehicle positions.
+TripUpdates and observations each contained 93,695,962 rows; VehiclePositions
+contained 4,864,419 rows. Published Silver versions were 133 / 143 / 194.
+Enrichment preserved the observation count. Scoring produced 13,763 rows with
+the unchanged 47-feature contract; Gold published manifest version 116 after
+its conservation and read-back checks.
+
+These are runtime correctness checks, not evidence of realtime availability:
+the source watermark remained 2026-11-22T08:09:39Z and was already stale when
+the full cycle completed. They do not validate Neon writes or authorize another
+run, deployment or scheduler change.
+
+An independent Silver backup could not be verified within the Free workspace
+capacity evidence available. The executed overwrites followed explicit acceptance
+that exact rollback to the previous Silver versions was not guaranteed. Do not
+assume that time travel or the procedure below guarantees recoverability.
+
+## Deployment and recovery procedure: separate authorization required
+
+The following pre-deployment safeguards remain a procedure for future changes;
+their inclusion does not imply that a usable backup or rollback exists today.
 
 1. Review/commit through the canonical Data/ML repository and a reviewed PR;
    no permanent workspace-only change. Preserve source commit and notebook hash.
