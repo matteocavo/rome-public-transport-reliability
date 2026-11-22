@@ -10,6 +10,7 @@
 
 # COMMAND ----------
 
+import hashlib
 from pyspark.sql import functions as F
 
 spark.conf.set("spark.sql.session.timeZone", "Europe/Rome")
@@ -262,21 +263,133 @@ vehicle_positions_silver = deduplicate_latest(
 
 # COMMAND ----------
 
+# Reviewed, exact-identity exception (2026-11-20). Bronze is NOT modified.
+# Scope: ONLY the 32 rows of entity 1255 / trip 101528146R50972 in snapshot 1794498556 (transient feed glitch:
+# trip descriptor with empty start_date). The single entity-1308 row of that snapshot is NOT registered and stays
+# under the ordinary 0.1% gate. Other identities or changes to the checked profile remain unreviewed.
+REVIEWED_SERVICE_DATE_EXCEPTIONS = {
+    1794498556: {
+        "entity_id": "1255", "trip_id": "101528146R50972", "n": 32,
+        "vehicle_id": "7740", "direction_id": "0",   # content profile: route_id/start_time must also be empty
+        "sha256": "f1e98d9ab7629000f335e0d341c3e4b018bfbe46ba92af06aece03f97ea73867",
+        "stop_keys": [
+        ("10", "80519"),
+        ("11", "71629"),
+        ("12", "78905"),
+        ("13", "78975"),
+        ("14", "78906"),
+        ("15", "71630"),
+        ("16", "71631"),
+        ("17", "71632"),
+        ("18", "71633"),
+        ("19", "76179"),
+        ("2", "71620"),
+        ("20", "79313"),
+        ("21", "76180"),
+        ("22", "76181"),
+        ("23", "76182"),
+        ("24", "76436"),
+        ("25", "76437"),
+        ("26", "76438"),
+        ("27", "76439"),
+        ("28", "76440"),
+        ("29", "81579"),
+        ("3", "71621"),
+        ("30", "74268"),
+        ("31", "80492"),
+        ("32", "74271"),
+        ("33", "81578"),
+        ("4", "71622"),
+        ("5", "71623"),
+        ("6", "75683"),
+        ("7", "71625"),
+        ("8", "71626"),
+        ("9", "80518"),
+        ],
+    },
+}
+
+
+def reviewed_exception_keys(snapshot, entry):
+    return [(str(snapshot), entry["entity_id"], entry["trip_id"], seq, stop) for seq, stop in entry["stop_keys"]]
+
+
+def validate_reviewed_service_date_registry(registry):
+    """Verify the reviewed identities before constructing any exception."""
+    for _snap, _entry in registry.items():
+        _keys = reviewed_exception_keys(_snap, _entry)
+        _digest = hashlib.sha256("\n".join("|".join(k) for k in sorted(_keys)).encode()).hexdigest()
+        if len(set(_keys)) != _entry["n"] or len(_keys) != _entry["n"] or _digest != _entry["sha256"]:
+            raise ValueError("reviewed service_date exception registry corrupted; write blocked")
+
+
+def reviewed_service_date_exception_expr(registry):
+    """Only the reviewed key and missing-date content profile may bypass the gate."""
+    validate_reviewed_service_date_registry(registry)
+    _reviewed_expr = F.lit(False)
+    for _snap, _entry in registry.items():
+        _ids = ["|".join(k[3:]) for k in reviewed_exception_keys(_snap, _entry)]
+        _reviewed_expr = _reviewed_expr | (
+            (F.col("feed_timestamp").cast("string") == str(_snap))
+            & (F.col("entity_id").cast("string") == _entry["entity_id"])
+            & (F.col("trip_id").cast("string") == _entry["trip_id"])
+            & (F.col("vehicle_id").cast("string") == _entry["vehicle_id"])
+            & (F.col("direction_id").cast("string") == _entry["direction_id"])
+            & (F.col("route_id").cast("string") == "")
+            & (F.col("start_time").cast("string") == "")
+            & (F.col("_service_date_raw").cast("string") == "")
+            & F.col("service_date").isNull()
+            & F.concat_ws("|", F.col("stop_sequence").cast("string"), F.col("stop_id").cast("string")).isin(_ids))
+    return F.coalesce(_reviewed_expr, F.lit(False))
+
+
+def validate_service_date_conservation(total, silver_rows, reviewed_rows, invalid_rows):
+    """Every deduplicated input belongs to exactly one output/exclusion count."""
+    if any(type(value) is not int or value < 0
+           for value in (total, silver_rows, reviewed_rows, invalid_rows)):
+        raise ValueError("invalid conservation counts; write blocked")
+    if total != silver_rows + reviewed_rows + invalid_rows:
+        raise ValueError("trip_updates conservation violated; write blocked")
+
+
+def write_reviewed_quarantine(frame, expected_keys):
+    """Overwrite the reviewed isolation first; verify actual persisted identities."""
+    if len(expected_keys) != len(set(expected_keys)):
+        raise ValueError("duplicate quarantine identity; write blocked")
+    registered = {key for snapshot, entry in REVIEWED_SERVICE_DATE_EXCEPTIONS.items()
+                  for key in reviewed_exception_keys(snapshot, entry)}
+    if not set(expected_keys).issubset(registered):
+        raise ValueError("unreviewed quarantine identity; write blocked")
+    destination = "rome_transport.silver.trip_updates_quarantine"
+    frame.write.format("delta").mode("overwrite").option("overwriteSchema", "true").saveAsTable(destination)
+    saved = spark.table(destination)
+    if saved.schema != frame.schema:
+        raise ValueError("quarantine read-back schema mismatch; stop downstream")
+    actual_keys = [tuple(str(value) for value in row)
+                   for row in saved.select(*trip_updates_dedup_key).limit(len(registered) + 1).collect()]
+    if sorted(actual_keys) != sorted(expected_keys):
+        raise ValueError("quarantine read-back identity mismatch; stop downstream")
+
+
+trip_updates_silver = trip_updates_silver.withColumn(
+    "_reviewed_exception", reviewed_service_date_exception_expr(REVIEWED_SERVICE_DATE_EXCEPTIONS))
+_unreviewed_invalid = F.col("service_date").isNull() & ~F.col("_reviewed_exception")
+
 date_metrics = trip_updates_silver.agg(
     F.count("*").alias("total"),
-    F.count(F.when(F.col("service_date").isNull(), 1)).alias("invalid"),
+    F.count(F.when(_unreviewed_invalid, 1)).alias("invalid"),   # reviewed exception rows are excluded from the gate
     F.count(F.when(F.col("_service_date_repaired"), 1)).alias("repaired"),
 ).first().asDict()
 worst_snapshot_rate = 0.0
 if date_metrics["invalid"]:
     snapshot_quality = trip_updates_silver.groupBy("feed_timestamp").agg(
         F.count("*").alias("total"),
-        F.count(F.when(F.col("service_date").isNull(), 1)).alias("invalid"),
+        F.count(F.when(_unreviewed_invalid, 1)).alias("invalid"),
     )
     worst_snapshot_rate = snapshot_quality.agg(
         F.max(F.col("invalid") / F.col("total"))).first()[0]
     # Date-only, bounded diagnostics; observation identifiers/payloads are not logged.
-    samples = trip_updates_silver.filter(F.col("service_date").isNull()).select(
+    samples = trip_updates_silver.filter(_unreviewed_invalid).select(
         "_service_date_raw").distinct().limit(10).collect()
     print({"service_date_invalid_samples": [
         {"value": str(row[0])[:32], "parseable": normalize_service_date(row[0]) is not None}
@@ -290,9 +403,30 @@ try:
 except ValueError:
     print({"service_date_quality_status": "REJECTED", "write_blocked": True})
     raise
-print({"service_date_quality": service_date_quality})
+quarantine_df = trip_updates_silver.filter(F.col("service_date").isNull() & F.col("_reviewed_exception")).drop(
+    "_service_date_repaired", "_reviewed_exception")
+quarantine_count = quarantine_df.count()
+if quarantine_count > sum(e["n"] for e in REVIEWED_SERVICE_DATE_EXCEPTIONS.values()):
+    raise ValueError("quarantine larger than reviewed registry; write blocked")
 trip_updates_silver = trip_updates_silver.filter(F.col("service_date").isNotNull()).drop(
-    "_service_date_raw", "_service_date_repaired")
+    "_service_date_raw", "_service_date_repaired", "_reviewed_exception")
+silver_filtered_count = trip_updates_silver.count()
+validate_service_date_conservation(
+    date_metrics["total"], silver_filtered_count, quarantine_count, date_metrics["invalid"])
+# The unchanged gate counts only unreviewed invalids. Keep its diagnostics honest:
+# reviewed rows are also excluded, and must not be reported as valid Silver rows.
+service_date_quality.update(
+    reviewed_quarantine_rows=quarantine_count,
+    excluded_rows=quarantine_count + date_metrics["invalid"],
+    valid_rows=silver_filtered_count - date_metrics["repaired"],
+)
+quarantine_keys = [tuple(str(value) for value in row)
+                   for row in quarantine_df.select(*trip_updates_dedup_key).limit(33).collect()]
+if len(quarantine_keys) != quarantine_count:
+    raise ValueError("quarantine key count mismatch; write blocked")
+print({"service_date_quality": service_date_quality})
+print({"quarantine_rows": quarantine_count, "unreviewed_invalid_dropped": date_metrics["invalid"],
+       "silver_rows": silver_filtered_count})
 if trip_updates_silver.filter(F.col("service_date").isNull()).limit(1).count():
     raise ValueError("trip_updates: invalid service date escaped isolation; write blocked")
 for name, frame in [("trip_updates", trip_updates_silver), ("vehicle_positions", vehicle_positions_silver)]:
@@ -497,6 +631,8 @@ for name, frame in outputs.items():
         raise ValueError(f"{name}: latest source epoch lost; write blocked")
 if not ALLOW_SILVER_OVERWRITE:
     raise RuntimeError("Silver validation passed; overwrite disabled until explicitly authorized")
+# Quarantine FIRST (full rebuild, idempotent); Silver observations stay LAST so 07 never sees a half-run.
+write_reviewed_quarantine(quarantine_df, quarantine_keys)
 written_versions = {}
 for name, frame in outputs.items():
     destination = "rome_transport.silver." + name
