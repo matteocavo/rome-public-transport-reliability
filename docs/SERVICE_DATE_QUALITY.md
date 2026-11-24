@@ -105,6 +105,13 @@ Gold: quality_status **PASSED**, dashboard_ready **YES**, refresh
 Validazione repository: **60 test PASS** (55 esistenti + 5 nuovi metodi con sottocasi),
 compileall PASS, policy file/segreti PASS, git diff --check PASS, CI verde sul fix.
 Nessun training/model threshold modificato. Backend, Render, Neon, n8n e workflow
-Actions invariati; nessuno scheduler abilitato. PR aperta, nessun merge.
+Actions invariati; nessuno scheduler abilitato. PR #16 unita in main il 28 ottobre 2026 (merge commit `016d11e`).
 
 **DATABRICKS FRESHNESS RESTORED — READY FOR POST-FIX REVIEW**
+
+## Nota di stato
+
+Questo documento descrive la diagnosi e la validazione runtime del 28 ottobre 2026
+e non è stato riscritto. Il secondo incidente del 12 novembre 2026, la quarantena
+delle anomalie verificate e il ripristino validato il 21 e 22 novembre 2026 sono
+documentati in [SILVER_06_RECOVERY.md](SILVER_06_RECOVERY.md).
