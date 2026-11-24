@@ -83,6 +83,21 @@ def parse_positive_int(value, name):
     return number
 
 
+# Databricks evidence (2026-11-24, all 96.4M Bronze rows): _ingestion_timestamp - feed_timestamp ranged 1..901 s,
+# 0 rows > 1h, 0 rows ahead of the feed by > 60 s. Observational, NOT a guarantee: it only sets a FLOOR for the
+# window overlap; count_late_arrivals stays the fail-closed per-run check.
+OBSERVED_MAX_INGESTION_LAG_SECONDS = 901
+
+
+def assert_safety_margin(safety_seconds):
+    """Fail closed if the overlap is smaller than the lag actually observed in Bronze."""
+    value = parse_positive_int(safety_seconds, "safety_window_seconds")
+    if value < OBSERVED_MAX_INGESTION_LAG_SECONDS:
+        raise ValueError(f"safety_window_seconds={value} is below the observed max ingestion lag "
+                         f"({OBSERVED_MAX_INGESTION_LAG_SECONDS}s); write blocked")
+    return value
+
+
 def plan_incremental_window(watermarks, source_max_feed, safety_seconds, max_window_seconds):
     """Pure planner. The window starts below the OLDEST output watermark, so a run that partially wrote
     (outputs at different watermarks) is repaired by simply re-running the same window."""
@@ -152,11 +167,12 @@ def overlap_difference(existing, new, upto):
 # Incremental WRITES stay disabled until every blocker below is proven on Databricks and removed in a reviewed change.
 INCREMENTAL_WRITE_BLOCKERS = (
     "global_invalid_gate: the original 0.1% gate is cumulative over all Bronze; invalid rows are dropped from "
-    "Silver so the historical counts are not recoverable. The window-only gate is NOT equivalent.",
-    "late_arrival_checkpoint: max(_ingestion_timestamp) of Silver is not a proven complete checkpoint "
-    "(non-monotonic ingestion, and after a partial write the cutoff may already include unpublished rows).",
-    "delta_replacewhere: replaceWhere condition/schema/efficiency not verified (no Delta available locally); "
-    "must be proven on a copy of the tables in Databricks.",
+    "Silver so the retained history's invalid count is not recoverable. A per-window gate is NOT equivalent: "
+    "with overlapping replaced tails it can pass every window while the cumulative rate exceeds 0.1% "
+    "(a cleaner re-computed tail replaces a dirtier one). Stateless upper bound seen on Databricks: ~0.25%.",
+    # Resolved with Databricks evidence (2026-11-24), no longer blockers: delta_replacewhere (isolated Delta table: out-of-window
+    # rows, schema mismatch and reruns behave as required) and late_arrival_checkpoint (lag 1..901 s vs 3600 s margin +
+    # fail-closed count_late_arrivals). Efficiency of replaceWhere on the unpartitioned Silver tables is still unmeasured.
 )
 # Documented, reviewed shadow differences: {table: {"only_existing": n, "only_incremental": n, "reason": str}}.
 # Empty by default: any overlap difference is a FAIL until explicitly reviewed and recorded here.
@@ -231,7 +247,7 @@ if RUN_MODE != "full":
          "realtime_trip_stop_observations":
              _silver["realtime_trip_stop_observations"].agg(F.max("feed_timestamp")).first()[0]},
         sources["trip_updates"].agg(F.max("feed_timestamp")).first()[0],
-        read_widget("safety_window_seconds", 3600), read_widget("max_window_seconds", 21600))
+        assert_safety_margin(read_widget("safety_window_seconds", 3600)), read_widget("max_window_seconds", 21600))
     SCOPE_START = INCREMENTAL_PLAN["start"]
     VP_SCOPE_START = SCOPE_START - VP_MAX_STALENESS_SECONDS
     _tu_cutoff = _silver["trip_updates"].agg(F.max("_ingestion_timestamp")).first()[0]
