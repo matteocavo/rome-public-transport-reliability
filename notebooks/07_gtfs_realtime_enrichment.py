@@ -118,11 +118,60 @@ def overlap_difference(existing, new, upto):
             "only_incremental": new_part.exceptAll(old_part).count()}
 
 
+# Incremental WRITES stay disabled until every blocker below is proven on Databricks and removed in a reviewed change.
+INCREMENTAL_WRITE_BLOCKERS = (
+    "upstream_silver_gate: 06 incremental writes are themselves blocked (cumulative invalid gate not provable).",
+    "late_arrival_checkpoint: max(_ingestion_timestamp) of Silver is not a proven complete checkpoint "
+    "(non-monotonic ingestion, and after a partial write the cutoff may already include unpublished rows).",
+    "delta_replacewhere: replaceWhere condition/schema/efficiency not verified (no Delta available locally); "
+    "must be proven on a copy of the tables in Databricks.",
+)
+# Documented, reviewed shadow differences: {table: {"only_existing": n, "only_incremental": n, "reason": str}}.
+# Empty by default: any overlap difference is a FAIL until explicitly reviewed and recorded here.
+EXPECTED_SHADOW_DIFFERENCES = {}
+
+
+def assert_incremental_write_allowed(blockers):
+    if blockers:
+        raise RuntimeError("incremental write blocked, unresolved prerequisites: " + " | ".join(blockers))
+
+
+def classify_shadow(differences, documented):
+    """FAIL on any overlap difference unless it exactly matches a reviewed entry; documented differences are
+    reported separately and never counted as a clean match."""
+    unexplained, explained = {}, {}
+    for name, diff in differences.items():
+        if not (diff["only_existing"] or diff["only_incremental"]):
+            continue
+        entry = documented.get(name)
+        if (entry and entry.get("reason") and entry.get("only_existing") == diff["only_existing"]
+                and entry.get("only_incremental") == diff["only_incremental"]):
+            explained[name] = {**diff, "reason": entry["reason"]}
+        else:
+            unexplained[name] = diff
+    status = ("SHADOW_FAILED" if unexplained
+              else "SHADOW_DOCUMENTED_DIFFERENCES" if explained else "SHADOW_MATCH")
+    return {"status": status, "unexplained": unexplained, "documented": explained}
+
+
+def check_replace_window(frame, target_schema, start):
+    """Delta replaceWhere preconditions: identical ordered schema and every row inside the predicate
+    (a row outside, or with NULL feed_timestamp, would violate Delta's replaceWhere constraint check)."""
+    if [(f.name, f.dataType.simpleString()) for f in frame.schema.fields] != [
+            (f.name, f.dataType.simpleString()) for f in target_schema.fields]:
+        raise ValueError("replaceWhere: schema/column order differs from target; write blocked")
+    assert_epoch_column(frame)
+    outside = frame.filter(~(F.col("feed_timestamp") >= F.lit(int(start))) | F.col("feed_timestamp").isNull())
+    if outside.limit(1).count():
+        raise ValueError("replaceWhere: rows outside the replaced window; write blocked")
+
+
 def replace_window(frame, destination, start, expected_window_rows):
     """Idempotent replaceWhere of exactly [start, +inf) with before/after conservation checks."""
     start = int(start)
     predicate = f"feed_timestamp >= {start}"
     before = spark.table(destination)
+    check_replace_window(frame, before.schema, start)
     before_total = before.count()
     before_window = before.filter(predicate).count()
     frame.write.format("delta").mode("overwrite").option("replaceWhere", predicate).saveAsTable(destination)
@@ -841,12 +890,16 @@ else:
     if lost_window_keys(existing_window, enriched_observations, OBS_KEY):
         raise ValueError("Incremental window would drop published observation keys; write blocked")
     if RUN_MODE == "incremental_shadow":
-        print({"shadow_overlap_difference": overlap_difference(
-            existing_output, enriched_observations, INCREMENTAL_PLAN["watermark"]),
-            "note": "shadow verification only: nothing written"})
+        _diff = {"realtime_trip_stop_observations_enriched": overlap_difference(
+            existing_output, enriched_observations, INCREMENTAL_PLAN["watermark"])}
+        _verdict = classify_shadow(_diff, EXPECTED_SHADOW_DIFFERENCES)
+        print({"shadow_verdict": _verdict, "written": False, "write_blockers": list(INCREMENTAL_WRITE_BLOCKERS)})
+        if _verdict["status"] == "SHADOW_FAILED":
+            raise ValueError("incremental_shadow FAIL: unexplained overlap differences vs published output")
     else:
         if not (ALLOW_ENRICHMENT_OVERWRITE and ALLOW_INCREMENTAL_WRITE):
             raise RuntimeError("Incremental validated; needs allow_enrichment_overwrite and allow_incremental_write")
+        assert_incremental_write_allowed(INCREMENTAL_WRITE_BLOCKERS)   # raises before ANY write
         WRITTEN_VERSION = replace_window(enriched_observations, OUTPUT_TABLE, SCOPE_START, source_count)
         print(f"Replaced window >= {SCOPE_START} in {OUTPUT_TABLE} (version {WRITTEN_VERSION})")
 

@@ -20,11 +20,14 @@ except Exception:  # pragma: no cover
 ROOT = Path(__file__).resolve().parents[1]
 N06 = (ROOT / "notebooks/06_gtfs_realtime_silver.py").read_text(encoding="utf-8")
 N07 = (ROOT / "notebooks/07_gtfs_realtime_enrichment.py").read_text(encoding="utf-8")
-SHARED = {"RUN_MODES", "VP_MAX_STALENESS_SECONDS", "MAX_INVALID_SERVICE_DATE_RATE"}
+SHARED = {"RUN_MODES", "VP_MAX_STALENESS_SECONDS", "MAX_INVALID_SERVICE_DATE_RATE",
+          "INCREMENTAL_WRITE_BLOCKERS", "EXPECTED_SHADOW_DIFFERENCES"}
 FUNCS = {"resolve_run_mode", "parse_positive_int", "plan_incremental_window", "plan_enrichment_window",
          "assert_epoch_column", "scope_from", "vehicle_epoch_expr", "count_late_arrivals",
          "count_vp_lookback_escapes", "lost_window_keys", "overlap_difference", "replace_window",
-         "deduplicate_latest", "validate_service_date_quality"}
+         "deduplicate_latest", "validate_service_date_quality", "classify_shadow",
+         "assert_incremental_write_allowed", "check_replace_window"}
+SHARED_EXTRA = {"INCREMENTAL_WRITE_BLOCKERS", "EXPECTED_SHADOW_DIFFERENCES"}
 KEY = ["feed_timestamp", "entity_id", "trip_id", "stop_sequence", "stop_id"]
 
 
@@ -232,6 +235,65 @@ class IncrementalTests(unittest.TestCase):
             self.assertIn('mode("overwrite")', text)
         self.assertIn("versionAsOf", N06)
         self.assertIn("incremental_shadow", N06 + N07)
+
+    # ---- hardening (PR review) -------------------------------------------------------------------
+    def test_partial_write_every_table_subset_recovers_from_observations_marker(self):
+        plan = self.n06["plan_incremental_window"]
+        old, new = 150, 200
+        # write order tu -> vp -> obs: obs is the commit marker, so only these states are reachable
+        for tu_w, obs_w in ((old, old), (new, old), (new, new)):
+            got = plan({"trip_updates": tu_w, "realtime_trip_stop_observations": obs_w}, new, 50, 1000)
+            self.assertEqual(got["start"], min(tu_w, obs_w) - 50)      # never skips an unpublished range
+        # an order-violating state (obs ahead of tu) is still covered by the minimum, not trusted
+        self.assertEqual(plan({"trip_updates": old, "realtime_trip_stop_observations": new}, new, 50, 1000)["start"], 100)
+        # observations-last is asserted on the real notebook text
+        self.assertLess(N06.index('"vehicle_positions": '), N06.index('"realtime_trip_stop_observations": '))
+        self.assertIn("observations LAST", N06)
+
+    def test_shadow_difference_fails_and_documented_is_not_pass(self):
+        classify = self.n06["classify_shadow"]
+        clean = {"t": {"only_existing": 0, "only_incremental": 0}}
+        self.assertEqual(classify(clean, {})["status"], "SHADOW_MATCH")
+        diff = {"t": {"only_existing": 1, "only_incremental": 0}}
+        self.assertEqual(classify(diff, {})["status"], "SHADOW_FAILED")
+        # a documented entry without a reason or with different counts never explains the difference
+        self.assertEqual(classify(diff, {"t": {"only_existing": 1, "only_incremental": 0}})["status"], "SHADOW_FAILED")
+        self.assertEqual(classify(diff, {"t": {"only_existing": 2, "only_incremental": 0, "reason": "x"}})["status"],
+                         "SHADOW_FAILED")
+        ok = classify(diff, {"t": {"only_existing": 1, "only_incremental": 0, "reason": "reviewed"}})
+        self.assertEqual(ok["status"], "SHADOW_DOCUMENTED_DIFFERENCES")
+        self.assertNotEqual(ok["status"], "SHADOW_MATCH")
+        self.assertEqual(self.n06["EXPECTED_SHADOW_DIFFERENCES"], {})
+        self.assertIn('raise ValueError("incremental_shadow FAIL', N06)
+        self.assertIn('raise ValueError("incremental_shadow FAIL', N07)
+
+    def test_incremental_write_blocked_while_prerequisites_unproven(self):
+        allowed = self.n06["assert_incremental_write_allowed"]
+        blockers = self.n06["INCREMENTAL_WRITE_BLOCKERS"]
+        self.assertTrue(any("global_invalid_gate" in b for b in blockers))
+        self.assertTrue(any("late_arrival_checkpoint" in b for b in blockers))
+        self.assertTrue(any("delta_replacewhere" in b for b in blockers))
+        with self.assertRaises(RuntimeError):
+            allowed(blockers)
+        allowed(())   # only an explicit reviewed removal of every blocker opens the gate
+        for text in (N06, N07):   # the blocker check precedes the first write call
+            call = text.index("assert_incremental_write_allowed(INCREMENTAL_WRITE_BLOCKERS)")
+            self.assertGreater(text.index("replace_window(", call), call)       # a write call follows the guard
+        self.assertIn("window_only_NOT_equivalent", N06)
+
+    def test_replace_window_preconditions(self):
+        check = self.n06["check_replace_window"]
+        target = self.tu([(100, "e", "T", "V", 1, "S", 1, 0)]).schema
+        good = self.tu([(150, "e", "T", "V", 1, "S", 1, 0)])
+        check(good, target, 120)
+        with self.assertRaises(ValueError):     # row below the predicate violates Delta's replaceWhere constraint
+            check(self.tu([(100, "e", "T", "V", 1, "S", 1, 0)]), target, 120)
+        with self.assertRaises(ValueError):     # NULL feed_timestamp is outside any predicate
+            check(self.tu([(None, "e", "T", "V", 1, "S", 1, 0)]), target, 120)
+        with self.assertRaises(ValueError):     # reordered columns
+            check(good.select(*reversed(good.columns)), target, 120)
+        with self.assertRaises(ValueError):     # changed type
+            check(good.withColumn("delay", F.col("delay").cast("string")), target, 120)
 
     def test_default_is_full_and_writes_are_opt_in(self):
         for text in (N06, N07):

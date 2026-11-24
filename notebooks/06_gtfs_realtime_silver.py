@@ -149,11 +149,61 @@ def overlap_difference(existing, new, upto):
             "only_incremental": new_part.exceptAll(old_part).count()}
 
 
+# Incremental WRITES stay disabled until every blocker below is proven on Databricks and removed in a reviewed change.
+INCREMENTAL_WRITE_BLOCKERS = (
+    "global_invalid_gate: the original 0.1% gate is cumulative over all Bronze; invalid rows are dropped from "
+    "Silver so the historical counts are not recoverable. The window-only gate is NOT equivalent.",
+    "late_arrival_checkpoint: max(_ingestion_timestamp) of Silver is not a proven complete checkpoint "
+    "(non-monotonic ingestion, and after a partial write the cutoff may already include unpublished rows).",
+    "delta_replacewhere: replaceWhere condition/schema/efficiency not verified (no Delta available locally); "
+    "must be proven on a copy of the tables in Databricks.",
+)
+# Documented, reviewed shadow differences: {table: {"only_existing": n, "only_incremental": n, "reason": str}}.
+# Empty by default: any overlap difference is a FAIL until explicitly reviewed and recorded here.
+EXPECTED_SHADOW_DIFFERENCES = {}
+
+
+def assert_incremental_write_allowed(blockers):
+    if blockers:
+        raise RuntimeError("incremental write blocked, unresolved prerequisites: " + " | ".join(blockers))
+
+
+def classify_shadow(differences, documented):
+    """FAIL on any overlap difference unless it exactly matches a reviewed entry; documented differences are
+    reported separately and never counted as a clean match."""
+    unexplained, explained = {}, {}
+    for name, diff in differences.items():
+        if not (diff["only_existing"] or diff["only_incremental"]):
+            continue
+        entry = documented.get(name)
+        if (entry and entry.get("reason") and entry.get("only_existing") == diff["only_existing"]
+                and entry.get("only_incremental") == diff["only_incremental"]):
+            explained[name] = {**diff, "reason": entry["reason"]}
+        else:
+            unexplained[name] = diff
+    status = ("SHADOW_FAILED" if unexplained
+              else "SHADOW_DOCUMENTED_DIFFERENCES" if explained else "SHADOW_MATCH")
+    return {"status": status, "unexplained": unexplained, "documented": explained}
+
+
+def check_replace_window(frame, target_schema, start):
+    """Delta replaceWhere preconditions: identical ordered schema and every row inside the predicate
+    (a row outside, or with NULL feed_timestamp, would violate Delta's replaceWhere constraint check)."""
+    if [(f.name, f.dataType.simpleString()) for f in frame.schema.fields] != [
+            (f.name, f.dataType.simpleString()) for f in target_schema.fields]:
+        raise ValueError("replaceWhere: schema/column order differs from target; write blocked")
+    assert_epoch_column(frame)
+    outside = frame.filter(~(F.col("feed_timestamp") >= F.lit(int(start))) | F.col("feed_timestamp").isNull())
+    if outside.limit(1).count():
+        raise ValueError("replaceWhere: rows outside the replaced window; write blocked")
+
+
 def replace_window(frame, destination, start, expected_window_rows):
     """Idempotent replaceWhere of exactly [start, +inf) with before/after conservation checks."""
     start = int(start)
     predicate = f"feed_timestamp >= {start}"
     before = spark.table(destination)
+    check_replace_window(frame, before.schema, start)
     before_total = before.count()
     before_window = before.filter(predicate).count()
     frame.write.format("delta").mode("overwrite").option("replaceWhere", predicate).saveAsTable(destination)
@@ -187,7 +237,8 @@ if RUN_MODE != "full":
     _tu_cutoff = _silver["trip_updates"].agg(F.max("_ingestion_timestamp")).first()[0]
     _quarantine_cutoff = spark.table("rome_transport.silver.trip_updates_quarantine").agg(
         F.max("_ingestion_timestamp")).first()[0]
-    _tu_cutoff = max([c for c in (_tu_cutoff, _quarantine_cutoff) if c is not None], default=None)
+    # Conservative: the OLDEST cutoff is used so a partially advanced table cannot hide late rows (heuristic only).
+    _tu_cutoff = min([c for c in (_tu_cutoff, _quarantine_cutoff) if c is not None], default=None)
     _vp_cutoff = _silver["vehicle_positions"].agg(F.max("_ingestion_timestamp")).first()[0]
     if count_late_arrivals(sources["trip_updates"], SCOPE_START, _tu_cutoff):
         raise ValueError("trip_updates: late arrival older than the safety window; write blocked")
@@ -802,20 +853,27 @@ for name, frame in outputs.items():
         raise ValueError(f"{name}: latest source epoch lost; write blocked")
 
 if RUN_MODE != "full":
+    differences = {}
     for name, frame in outputs.items():
         existing = spark.table("rome_transport.silver." + name)
         existing_window = existing.filter(F.col("feed_timestamp") >= F.lit(SCOPE_START))
         if lost_window_keys(existing_window, frame, OUTPUT_KEYS[name]):
             raise ValueError(f"{name}: published keys lost by the recompute; write blocked")
+        check_replace_window(frame, existing.schema, SCOPE_START)
         if RUN_MODE == "incremental_shadow":
-            upto = INCREMENTAL_PLAN["watermark"]
-            print({"shadow": name, "window_rows": expected_counts[name],
-                   "overlap_difference": overlap_difference(existing_window, frame, upto)})
+            differences[name] = overlap_difference(existing_window, frame, INCREMENTAL_PLAN["watermark"])
+            print({"shadow": name, "window_rows": expected_counts[name], "overlap_difference": differences[name]})
     if RUN_MODE == "incremental_shadow":
-        print({"run_mode": RUN_MODE, "written": False, "quality_status": "SHADOW_PASSED"})
+        verdict = classify_shadow(differences, EXPECTED_SHADOW_DIFFERENCES)
+        print({"run_mode": RUN_MODE, "written": False, "shadow_verdict": verdict,
+               "write_blockers": list(INCREMENTAL_WRITE_BLOCKERS),
+               "gate_scope": "window_only_NOT_equivalent_to_original"})
+        if verdict["status"] == "SHADOW_FAILED":
+            raise ValueError("incremental_shadow FAIL: unexplained overlap differences vs published Silver")
     elif not (ALLOW_SILVER_OVERWRITE and ALLOW_INCREMENTAL_WRITE):
         raise RuntimeError("Incremental validation passed; write disabled until both write widgets are true")
     else:
+        assert_incremental_write_allowed(INCREMENTAL_WRITE_BLOCKERS)   # raises before ANY write
         # Quarantine only when this window actually contains the reviewed rows; otherwise it stays untouched.
         if quarantine_count:
             write_reviewed_quarantine(quarantine_df, quarantine_keys)
