@@ -21,12 +21,12 @@ ROOT = Path(__file__).resolve().parents[1]
 N06 = (ROOT / "notebooks/06_gtfs_realtime_silver.py").read_text(encoding="utf-8")
 N07 = (ROOT / "notebooks/07_gtfs_realtime_enrichment.py").read_text(encoding="utf-8")
 SHARED = {"RUN_MODES", "VP_MAX_STALENESS_SECONDS", "MAX_INVALID_SERVICE_DATE_RATE",
-          "INCREMENTAL_WRITE_BLOCKERS", "EXPECTED_SHADOW_DIFFERENCES"}
+          "INCREMENTAL_WRITE_BLOCKERS", "EXPECTED_SHADOW_DIFFERENCES", "OBSERVED_MAX_INGESTION_LAG_SECONDS"}
 FUNCS = {"resolve_run_mode", "parse_positive_int", "plan_incremental_window", "plan_enrichment_window",
          "assert_epoch_column", "scope_from", "vehicle_epoch_expr", "count_late_arrivals",
          "count_vp_lookback_escapes", "lost_window_keys", "overlap_difference", "replace_window",
          "deduplicate_latest", "validate_service_date_quality", "classify_shadow",
-         "assert_incremental_write_allowed", "check_replace_window"}
+         "assert_incremental_write_allowed", "check_replace_window", "assert_safety_margin"}
 SHARED_EXTRA = {"INCREMENTAL_WRITE_BLOCKERS", "EXPECTED_SHADOW_DIFFERENCES"}
 KEY = ["feed_timestamp", "entity_id", "trip_id", "stop_sequence", "stop_id"]
 
@@ -271,8 +271,7 @@ class IncrementalTests(unittest.TestCase):
         allowed = self.n06["assert_incremental_write_allowed"]
         blockers = self.n06["INCREMENTAL_WRITE_BLOCKERS"]
         self.assertTrue(any("global_invalid_gate" in b for b in blockers))
-        self.assertTrue(any("late_arrival_checkpoint" in b for b in blockers))
-        self.assertTrue(any("delta_replacewhere" in b for b in blockers))
+        self.assertEqual(len(blockers), 1)   # replaceWhere and late-arrival checkpoint resolved with evidence
         with self.assertRaises(RuntimeError):
             allowed(blockers)
         allowed(())   # only an explicit reviewed removal of every blocker opens the gate
@@ -280,6 +279,17 @@ class IncrementalTests(unittest.TestCase):
             call = text.index("assert_incremental_write_allowed(INCREMENTAL_WRITE_BLOCKERS)")
             self.assertGreater(text.index("replace_window(", call), call)       # a write call follows the guard
         self.assertIn("window_only_NOT_equivalent", N06)
+
+    def test_safety_margin_floor_is_fail_closed(self):
+        for ns in (self.n06, self.n07):
+            check = ns["assert_safety_margin"]
+            self.assertEqual(check(3600), 3600)
+            self.assertEqual(check(901), 901)
+            for bad in (900, 1, 0, "x", None):
+                with self.assertRaises(ValueError):
+                    check(bad)
+        for text in (N06, N07):   # the planner never receives an unchecked margin
+            self.assertIn('assert_safety_margin(read_widget("safety_window_seconds", 3600))', text)
 
     def test_replace_window_preconditions(self):
         check = self.n06["check_replace_window"]
