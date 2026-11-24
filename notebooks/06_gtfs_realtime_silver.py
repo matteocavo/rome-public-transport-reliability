@@ -11,6 +11,7 @@
 # COMMAND ----------
 
 import hashlib
+import json
 from pyspark.sql import functions as F
 
 spark.conf.set("spark.sql.session.timeZone", "Europe/Rome")
@@ -42,6 +43,164 @@ trip_stop_schedule = sources["trip_stop_schedule"]
 service_calendar = sources["service_calendar"]
 print({"source_versions": source_versions, "write_enabled": ALLOW_SILVER_OVERWRITE})
 
+# ---- Run modes -------------------------------------------------------------------------
+# full (default): unchanged full rebuild from the pinned Bronze versions.
+# incremental_shadow: controlled verification only; computes the incremental window, compares it with the
+#   existing Silver, never writes. Must be requested explicitly; never an ordinary automatic run.
+# incremental: recomputes only [watermark - safety window, latest] and replaces exactly that window.
+#   Needs allow_silver_overwrite AND allow_incremental_write; any inconsistency fails without writing
+#   and never falls back to a full rebuild by itself.
+RUN_MODES = ("full", "incremental_shadow", "incremental")
+VP_MAX_STALENESS_SECONDS = 180
+SILVER_OUTPUTS = ("trip_updates", "vehicle_positions", "realtime_trip_stop_observations")
+
+
+def read_widget(name, default):
+    try:
+        try:
+            dbutils.widgets.text(name, str(default))
+        except Exception:
+            pass
+        return dbutils.widgets.get(name)
+    except Exception:
+        return str(default)
+
+
+def resolve_run_mode(value):
+    mode = str(value if value is not None else "full").strip().lower() or "full"
+    if mode not in RUN_MODES:
+        raise ValueError(f"unknown run_mode {mode!r}; expected one of {RUN_MODES}")
+    return mode
+
+
+def parse_positive_int(value, name):
+    try:
+        number = int(str(value).strip())
+    except (TypeError, ValueError):
+        raise ValueError(f"{name} must be a positive integer") from None
+    if number <= 0:
+        raise ValueError(f"{name} must be a positive integer")
+    return number
+
+
+def plan_incremental_window(watermarks, source_max_feed, safety_seconds, max_window_seconds):
+    """Pure planner. The window starts below the OLDEST output watermark, so a run that partially wrote
+    (outputs at different watermarks) is repaired by simply re-running the same window."""
+    if not watermarks or any(value is None for value in watermarks.values()):
+        raise ValueError("incremental needs populated Silver outputs; run the explicit full rebuild first")
+    if source_max_feed is None:
+        raise ValueError("incremental: Bronze trip_updates is empty; write blocked")
+    safety_seconds = parse_positive_int(safety_seconds, "safety_window_seconds")
+    max_window_seconds = parse_positive_int(max_window_seconds, "max_window_seconds")
+    watermark = min(int(value) for value in watermarks.values())
+    source_max_feed = int(source_max_feed)
+    if source_max_feed < watermark:
+        raise ValueError("incremental: Bronze is behind Silver; inconsistent state, write blocked")
+    start = watermark - safety_seconds
+    if source_max_feed - start > max_window_seconds:
+        raise ValueError("incremental: window exceeds max_window_seconds; run the explicit full rebuild")
+    return {"start": start, "watermark": watermark, "source_max_feed": source_max_feed,
+            "window_seconds": source_max_feed - start}
+
+
+def assert_epoch_column(frame, column="feed_timestamp"):
+    if frame.schema[column].dataType.simpleString() not in ("bigint", "int"):
+        raise ValueError(f"{column} is not an integral epoch; incremental disabled")
+
+
+def scope_from(frame, start, column="feed_timestamp"):
+    """Row filter on the (immutable per snapshot) epoch; no-op for the full rebuild."""
+    if start is None:
+        return frame
+    assert_epoch_column(frame, column)
+    return frame.filter(F.col(column) >= F.lit(int(start)))
+
+
+def vehicle_epoch_expr(column="vehicle_timestamp"):
+    return F.when(F.trim(F.col(column).cast("string")).rlike(r"^-?\d+$"), F.col(column).cast("long"))
+
+
+def count_late_arrivals(bronze_df, boundary, ingestion_cutoff):
+    """Rows OLDER than the window but ingested after the last processed ingestion cannot be repaired
+    by the window: fail instead of silently skipping them."""
+    if ingestion_cutoff is None:
+        raise ValueError("incremental needs a Silver ingestion cutoff; run the explicit full rebuild first")
+    return bronze_df.filter((F.col("feed_timestamp") < F.lit(int(boundary)))
+                            & (F.col("_ingestion_timestamp") > F.lit(ingestion_cutoff))).limit(1).count()
+
+
+def count_vp_lookback_escapes(bronze_vp, vp_start):
+    """Positions the causal join could use (vehicle_timestamp inside the lookback) that the feed-time
+    scope would miss, e.g. a vehicle clock ahead of the feed clock."""
+    return bronze_vp.filter((F.col("feed_timestamp") < F.lit(int(vp_start)))
+                            & (vehicle_epoch_expr() >= F.lit(int(vp_start)))).limit(1).count()
+
+
+def lost_window_keys(existing_window, new_window, keys):
+    """Bronze never deletes rows, so every previously published key must survive the recompute."""
+    return existing_window.select(*keys).exceptAll(new_window.select(*keys)).limit(1).count()
+
+
+def overlap_difference(existing, new, upto):
+    """Row-level differences restricted to the already-published region (feed <= upto)."""
+    old_part = existing.filter(F.col("feed_timestamp") <= F.lit(int(upto)))
+    new_part = new.filter(F.col("feed_timestamp") <= F.lit(int(upto)))
+    return {"only_existing": old_part.exceptAll(new_part).count(),
+            "only_incremental": new_part.exceptAll(old_part).count()}
+
+
+def replace_window(frame, destination, start, expected_window_rows):
+    """Idempotent replaceWhere of exactly [start, +inf) with before/after conservation checks."""
+    start = int(start)
+    predicate = f"feed_timestamp >= {start}"
+    before = spark.table(destination)
+    before_total = before.count()
+    before_window = before.filter(predicate).count()
+    frame.write.format("delta").mode("overwrite").option("replaceWhere", predicate).saveAsTable(destination)
+    version = int(spark.sql(f"DESCRIBE HISTORY {destination} LIMIT 1").first()["version"])
+    saved = spark.read.option("versionAsOf", version).table(destination)
+    if (saved.count() != before_total - before_window + expected_window_rows
+            or saved.filter(predicate).count() != expected_window_rows):
+        raise ValueError(f"{destination}: window read-back mismatch; stop downstream")
+    return version
+
+
+RUN_MODE = resolve_run_mode(read_widget("run_mode", "full"))
+ALLOW_INCREMENTAL_WRITE = str(read_widget("allow_incremental_write", "false")).lower() == "true"
+INCREMENTAL_PLAN = None
+SCOPE_START = None      # None: full rebuild
+VP_SCOPE_START = None
+if RUN_MODE != "full":
+    _silver = {name: spark.table("rome_transport.silver." + name) for name in SILVER_OUTPUTS}
+    for _frame in _silver.values():
+        assert_epoch_column(_frame)
+    assert_epoch_column(sources["trip_updates"])
+    assert_epoch_column(sources["vehicle_positions"])
+    INCREMENTAL_PLAN = plan_incremental_window(
+        {"trip_updates": _silver["trip_updates"].agg(F.max("feed_timestamp")).first()[0],
+         "realtime_trip_stop_observations":
+             _silver["realtime_trip_stop_observations"].agg(F.max("feed_timestamp")).first()[0]},
+        sources["trip_updates"].agg(F.max("feed_timestamp")).first()[0],
+        read_widget("safety_window_seconds", 3600), read_widget("max_window_seconds", 21600))
+    SCOPE_START = INCREMENTAL_PLAN["start"]
+    VP_SCOPE_START = SCOPE_START - VP_MAX_STALENESS_SECONDS
+    _tu_cutoff = _silver["trip_updates"].agg(F.max("_ingestion_timestamp")).first()[0]
+    _quarantine_cutoff = spark.table("rome_transport.silver.trip_updates_quarantine").agg(
+        F.max("_ingestion_timestamp")).first()[0]
+    _tu_cutoff = max([c for c in (_tu_cutoff, _quarantine_cutoff) if c is not None], default=None)
+    _vp_cutoff = _silver["vehicle_positions"].agg(F.max("_ingestion_timestamp")).first()[0]
+    if count_late_arrivals(sources["trip_updates"], SCOPE_START, _tu_cutoff):
+        raise ValueError("trip_updates: late arrival older than the safety window; write blocked")
+    if count_late_arrivals(sources["vehicle_positions"], VP_SCOPE_START, _vp_cutoff):
+        raise ValueError("vehicle_positions: late arrival older than the lookback window; write blocked")
+    if count_vp_lookback_escapes(sources["vehicle_positions"], VP_SCOPE_START):
+        raise ValueError("vehicle_positions: usable positions outside the feed-time scope; write blocked")
+    trip_updates = scope_from(trip_updates, SCOPE_START)
+    vehicle_positions = scope_from(vehicle_positions, VP_SCOPE_START)
+    service_alerts = service_alerts.limit(0)   # not an input of 06 outputs; never scanned incrementally
+print({"run_mode": RUN_MODE, "incremental_plan": INCREMENTAL_PLAN,
+       "incremental_write_enabled": ALLOW_INCREMENTAL_WRITE})
+
 
 def deduplicate_latest(df, keys):
     """Preserve latest-ingestion semantics; reject conflicting latest-time ties."""
@@ -62,7 +221,8 @@ def deduplicate_latest(df, keys):
 source_counts = {
     "trip_updates": trip_updates.count(),
     "vehicle_positions": vehicle_positions.count(),
-    "service_alerts": service_alerts.count(),
+    # service_alerts is not an input of the three Silver outputs: no scan outside the full rebuild.
+    "service_alerts": service_alerts.count() if RUN_MODE == "full" else None,
     "trip_stop_schedule": trip_stop_schedule.count(),
     "service_calendar": service_calendar.count(),
 }
@@ -408,6 +568,9 @@ quarantine_df = trip_updates_silver.filter(F.col("service_date").isNull() & F.co
 quarantine_count = quarantine_df.count()
 if quarantine_count > sum(e["n"] for e in REVIEWED_SERVICE_DATE_EXCEPTIONS.values()):
     raise ValueError("quarantine larger than reviewed registry; write blocked")
+if RUN_MODE != "full" and quarantine_count not in (0, sum(e["n"] for e in REVIEWED_SERVICE_DATE_EXCEPTIONS.values())):
+    # The quarantine table is a full-registry table: a partial slice must never overwrite it.
+    raise ValueError("incremental: partial quarantine slice; run the explicit full rebuild")
 trip_updates_silver = trip_updates_silver.filter(F.col("service_date").isNotNull()).drop(
     "_service_date_raw", "_service_date_repaired", "_reviewed_exception")
 silver_filtered_count = trip_updates_silver.count()
@@ -613,7 +776,15 @@ assert validation_metrics["total_trip_updates"] == tu.count(), "Matching changed
 
 # COMMAND ----------
 
-outputs = {"trip_updates": trip_updates_silver, "vehicle_positions": vehicle_positions_silver,
+OUTPUT_KEYS = {
+    "trip_updates": trip_updates_dedup_key,
+    "vehicle_positions": ["feed_timestamp", "entity_id"],
+    "realtime_trip_stop_observations": ["feed_timestamp", "entity_id", "trip_id", "stop_sequence", "stop_id"],
+}
+# The join reads positions down to SCOPE_START - 180; the published window starts at SCOPE_START.
+vehicle_positions_out = (vehicle_positions_silver if SCOPE_START is None
+                         else vehicle_positions_silver.filter(F.col("feed_timestamp") >= F.lit(SCOPE_START)))
+outputs = {"trip_updates": trip_updates_silver, "vehicle_positions": vehicle_positions_out,
            "realtime_trip_stop_observations": realtime_trip_stop_observations}
 expected_counts = {}
 for name, frame in outputs.items():
@@ -629,6 +800,35 @@ for name, frame in outputs.items():
         F.max("feed_timestamp")).first()[0]
     if frame.agg(F.max("feed_timestamp")).first()[0] != source_max:
         raise ValueError(f"{name}: latest source epoch lost; write blocked")
+
+if RUN_MODE != "full":
+    for name, frame in outputs.items():
+        existing = spark.table("rome_transport.silver." + name)
+        existing_window = existing.filter(F.col("feed_timestamp") >= F.lit(SCOPE_START))
+        if lost_window_keys(existing_window, frame, OUTPUT_KEYS[name]):
+            raise ValueError(f"{name}: published keys lost by the recompute; write blocked")
+        if RUN_MODE == "incremental_shadow":
+            upto = INCREMENTAL_PLAN["watermark"]
+            print({"shadow": name, "window_rows": expected_counts[name],
+                   "overlap_difference": overlap_difference(existing_window, frame, upto)})
+    if RUN_MODE == "incremental_shadow":
+        print({"run_mode": RUN_MODE, "written": False, "quality_status": "SHADOW_PASSED"})
+    elif not (ALLOW_SILVER_OVERWRITE and ALLOW_INCREMENTAL_WRITE):
+        raise RuntimeError("Incremental validation passed; write disabled until both write widgets are true")
+    else:
+        # Quarantine only when this window actually contains the reviewed rows; otherwise it stays untouched.
+        if quarantine_count:
+            write_reviewed_quarantine(quarantine_df, quarantine_keys)
+        # Order matters: observations LAST so 07 never reads a half-run. A partial write is repaired by
+        # re-running the same window (min-watermark planner + idempotent replaceWhere).
+        written_versions = {name: replace_window(frame, "rome_transport.silver." + name, SCOPE_START,
+                                                 expected_counts[name])
+                            for name, frame in outputs.items()}
+        print({"source_versions": source_versions, "written_versions": written_versions,
+               "window_start": SCOPE_START, "counts": expected_counts, "quality_status": "PASSED"})
+    dbutils.notebook.exit(json.dumps({"run_mode": RUN_MODE, "status": "DONE"}))
+
+# Full rebuild (default).
 if not ALLOW_SILVER_OVERWRITE:
     raise RuntimeError("Silver validation passed; overwrite disabled until explicitly authorized")
 # Quarantine FIRST (full rebuild, idempotent); Silver observations stay LAST so 07 never sees a half-run.

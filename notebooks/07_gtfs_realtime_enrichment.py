@@ -38,6 +38,102 @@ SOURCE_TABLES = {
     "service_calendar": "rome_transport.silver.service_calendar",
 }
 
+# ---- Run modes -------------------------------------------------------------------------
+# full (default): unchanged full rebuild of the enriched table.
+# incremental_shadow: controlled verification only; recomputes the window, compares it with the existing
+#   output, never writes. Must be requested explicitly; never an ordinary automatic run.
+# incremental: recomputes only [output watermark - safety window, latest] (the same safety window as 06, so the
+#   window always covers every row 06 recomputed) and replaces exactly that window. Needs
+#   allow_enrichment_overwrite AND allow_incremental_write; any inconsistency fails without writing and
+#   never falls back to a full rebuild by itself.
+RUN_MODES = ("full", "incremental_shadow", "incremental")
+
+
+def read_widget(name, default):
+    try:
+        try:
+            dbutils.widgets.text(name, str(default))
+        except Exception:
+            pass
+        return dbutils.widgets.get(name)
+    except Exception:
+        return str(default)
+
+
+def resolve_run_mode(value):
+    mode = str(value if value is not None else "full").strip().lower() or "full"
+    if mode not in RUN_MODES:
+        raise ValueError(f"unknown run_mode {mode!r}; expected one of {RUN_MODES}")
+    return mode
+
+
+def parse_positive_int(value, name):
+    try:
+        number = int(str(value).strip())
+    except (TypeError, ValueError):
+        raise ValueError(f"{name} must be a positive integer") from None
+    if number <= 0:
+        raise ValueError(f"{name} must be a positive integer")
+    return number
+
+
+def plan_enrichment_window(output_max_feed, source_max_feed, safety_seconds, max_window_seconds):
+    """Pure planner. The window starts below the output watermark; a partial write is repaired by
+    re-running the same window."""
+    if output_max_feed is None:
+        raise ValueError("incremental needs a populated enriched table; run the explicit full rebuild first")
+    if source_max_feed is None:
+        raise ValueError("incremental: realtime observations are empty; write blocked")
+    safety_seconds = parse_positive_int(safety_seconds, "safety_window_seconds")
+    max_window_seconds = parse_positive_int(max_window_seconds, "max_window_seconds")
+    output_max_feed, source_max_feed = int(output_max_feed), int(source_max_feed)
+    if source_max_feed < output_max_feed:
+        raise ValueError("incremental: Silver observations are behind the enriched table; write blocked")
+    start = output_max_feed - safety_seconds
+    if source_max_feed - start > max_window_seconds:
+        raise ValueError("incremental: window exceeds max_window_seconds; run the explicit full rebuild")
+    return {"start": start, "watermark": output_max_feed, "source_max_feed": source_max_feed,
+            "window_seconds": source_max_feed - start}
+
+
+def scope_from(frame, start, column="feed_timestamp"):
+    """Row filter on the (immutable per snapshot) epoch; no-op for the full rebuild."""
+    if start is None:
+        return frame
+    if frame.schema[column].dataType.simpleString() not in ("bigint", "int"):
+        raise ValueError(f"{column} is not an integral epoch; incremental disabled")
+    return frame.filter(F.col(column) >= F.lit(int(start)))
+
+
+def lost_window_keys(existing_window, new_window, keys):
+    """Silver observations never lose rows, so every published key must survive the recompute."""
+    return existing_window.select(*keys).exceptAll(new_window.select(*keys)).limit(1).count()
+
+
+def overlap_difference(existing, new, upto):
+    """Row-level differences restricted to the already-published region (feed <= upto)."""
+    old_part = existing.filter(F.col("feed_timestamp") <= F.lit(int(upto)))
+    new_part = new.filter(F.col("feed_timestamp") <= F.lit(int(upto)))
+    return {"only_existing": old_part.exceptAll(new_part).count(),
+            "only_incremental": new_part.exceptAll(old_part).count()}
+
+
+def replace_window(frame, destination, start, expected_window_rows):
+    """Idempotent replaceWhere of exactly [start, +inf) with before/after conservation checks."""
+    start = int(start)
+    predicate = f"feed_timestamp >= {start}"
+    before = spark.table(destination)
+    before_total = before.count()
+    before_window = before.filter(predicate).count()
+    frame.write.format("delta").mode("overwrite").option("replaceWhere", predicate).saveAsTable(destination)
+    version = int(spark.sql(f"DESCRIBE HISTORY {destination} LIMIT 1").first()["version"])
+    saved = spark.read.option("versionAsOf", version).table(destination)
+    if (saved.count() != before_total - before_window + expected_window_rows
+            or saved.filter(predicate).count() != expected_window_rows):
+        raise ValueError(f"{destination}: window read-back mismatch; stop downstream")
+    return version
+
+
 def require_columns(df, required, label):
     missing = sorted(set(required) - set(df.columns))
     if missing:
@@ -124,6 +220,23 @@ trip_stop_schedule = sources["trip_stop_schedule"]
 service_alerts = sources["service_alerts"]
 service_calendar = sources["service_calendar"]
 print("Source Delta versions:", source_versions)
+
+RUN_MODE = resolve_run_mode(read_widget("run_mode", "full"))
+ALLOW_INCREMENTAL_WRITE = str(read_widget("allow_incremental_write", "false")).lower() == "true"
+INCREMENTAL_PLAN = None
+SCOPE_START = None      # None: full rebuild
+if RUN_MODE != "full":
+    # Only the observations are scoped. Schedule/calendar are dimensions; alerts keep their whole timeline,
+    # so the snapshot preceding the window is carried in by the as-of alignment (no temporal leakage).
+    _existing_output = spark.table(OUTPUT_TABLE)
+    INCREMENTAL_PLAN = plan_enrichment_window(
+        _existing_output.agg(F.max("feed_timestamp")).first()[0],
+        realtime_observations.agg(F.max("feed_timestamp")).first()[0],
+        read_widget("safety_window_seconds", 3600), read_widget("max_window_seconds", 21600))
+    SCOPE_START = INCREMENTAL_PLAN["start"]
+    realtime_observations = scope_from(realtime_observations, SCOPE_START)
+print({"run_mode": RUN_MODE, "incremental_plan": INCREMENTAL_PLAN,
+       "incremental_write_enabled": ALLOW_INCREMENTAL_WRITE})
 
 REALTIME_COLUMNS = """feed_timestamp feed_datetime entity_id trip_id route_id service_date
 start_time direction_id vehicle_id stop_sequence stop_id arrival_delay_seconds
@@ -706,16 +819,36 @@ validation_passed = True
 
 if not validation_passed:
     raise RuntimeError("Complete validation before persisting")
-if not ALLOW_ENRICHMENT_OVERWRITE:
-    raise RuntimeError("Enrichment validated; overwrite disabled until explicitly authorized")
-(
-    enriched_observations.write
-    .format("delta")
-    .mode("overwrite")
-    .option("overwriteSchema", "true")
-    .saveAsTable(OUTPUT_TABLE)
-)
-print(f"Saved {OUTPUT_TABLE}")
+if RUN_MODE == "full":
+    if not ALLOW_ENRICHMENT_OVERWRITE:
+        raise RuntimeError("Enrichment validated; overwrite disabled until explicitly authorized")
+    (
+        enriched_observations.write
+        .format("delta")
+        .mode("overwrite")
+        .option("overwriteSchema", "true")
+        .saveAsTable(OUTPUT_TABLE)
+    )
+    print(f"Saved {OUTPUT_TABLE}")
+else:
+    existing_output = spark.table(OUTPUT_TABLE)
+    # Fail closed: identical schema (names, order, types) and a window reaching the source maximum.
+    if existing_output.schema != enriched_observations.schema:
+        raise ValueError("Incremental schema differs from the existing output; write blocked, run the explicit full rebuild")
+    if enriched_observations.agg(F.max("feed_timestamp")).first()[0] != INCREMENTAL_PLAN["source_max_feed"]:
+        raise ValueError("Incremental window does not reach the source maximum; write blocked")
+    existing_window = scope_from(existing_output, SCOPE_START)
+    if lost_window_keys(existing_window, enriched_observations, OBS_KEY):
+        raise ValueError("Incremental window would drop published observation keys; write blocked")
+    if RUN_MODE == "incremental_shadow":
+        print({"shadow_overlap_difference": overlap_difference(
+            existing_output, enriched_observations, INCREMENTAL_PLAN["watermark"]),
+            "note": "shadow verification only: nothing written"})
+    else:
+        if not (ALLOW_ENRICHMENT_OVERWRITE and ALLOW_INCREMENTAL_WRITE):
+            raise RuntimeError("Incremental validated; needs allow_enrichment_overwrite and allow_incremental_write")
+        WRITTEN_VERSION = replace_window(enriched_observations, OUTPUT_TABLE, SCOPE_START, source_count)
+        print(f"Replaced window >= {SCOPE_START} in {OUTPUT_TABLE} (version {WRITTEN_VERSION})")
 
 
 # COMMAND ----------
@@ -727,7 +860,9 @@ print(f"Saved {OUTPUT_TABLE}")
 
 # COMMAND ----------
 
-saved_output = spark.table(OUTPUT_TABLE)
+# Incremental: validate the replaced window; full: the whole table (SCOPE_START is None).
+# Shadow wrote nothing, so its row-count comparison is skipped below.
+saved_output = scope_from(spark.table(OUTPUT_TABLE), SCOPE_START)
 saved_summary = saved_output.agg(
     F.count("*").alias("total_rows"),
     F.countDistinct("feed_timestamp").alias("distinct_feed_snapshots"),
@@ -735,7 +870,7 @@ saved_summary = saved_output.agg(
     F.countDistinct("vehicle_id").alias("distinct_vehicles"),
 )
 saved_summary.show(truncate=False)
-if saved_summary.first()["total_rows"] != source_count:
+if RUN_MODE != "incremental_shadow" and saved_summary.first()["total_rows"] != source_count:
     raise ValueError("Persisted row count differs from the validated source count")
 if duplicate_report(saved_output, OBS_KEY, "Persisted grain")["duplicate_extra_rows"]:
     raise ValueError("Persisted output contains duplicate keys")
