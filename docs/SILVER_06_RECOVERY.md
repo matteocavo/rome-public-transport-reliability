@@ -157,3 +157,44 @@ and is itself a write requiring explicit authorization; if versions are not
 restorable, stop rather than improvising. A newly created quarantine is retained
 for evidence, not automatically dropped. Do not change Bronze, model, threshold,
 Neon, Render or GitHub schedules. Reverting code alone does not revert data.
+
+## Cumulative 0.1% gate and quarantine ledger (incremental mode)
+
+The quarantine table keeps its schema but now holds ALL rows with
+`service_date IS NULL` (the 32 reviewed rows plus unreviewed invalids). Reviewed
+vs unreviewed is derived on read via `reviewed_service_date_exception_expr`; the
+32 reviewed keys, hashes and fingerprint are unchanged. The only readers are
+notebook 06, `tests/test_silver06_recovery.py` and this document (audited; none
+in notebooks 07/08/13, `app/` or SQL).
+
+For an incremental window starting at S (no Bronze scan):
+`invalid_hist = ledger(ts<S) - reviewed(ts<S)`, `total_hist = silver(ts<S) + ledger(ts<S)`,
+gate = `(invalid_hist + window_invalid) / (total_hist + window_total) <= 0.001`,
+identical to full mode. The ledger is rewritten per window with
+`replaceWhere feed_timestamp >= S` (no double counting in overlaps); full mode
+overwrites it entirely.
+
+Safety (fail closed): the table property `rmi.quarantine_ledger=v1` certifies
+that the ledger is coherent with ALL Silver outputs. It is withdrawn before the
+first write of ANY run (full or incremental) and set again only after the ledger
+and every Silver output (trip_updates, vehicle_positions,
+realtime_trip_stop_observations) are written and verified. An absent marker
+therefore means "never built" or "interrupted write", and incremental mode
+refuses to run (`require_ledger_ready`, reached through
+`historical_gate_counts`). Rerunning the same or an earlier window does NOT
+reconcile the state and does not unblock it: advancement stays blocked until a
+completed full rebuild (default `run_mode=full`) rewrites the ledger and every
+Silver table and re-certifies. Cross-table Delta writes are not atomic, so the
+marker is the single commit point. Each write carries a unique `userMetadata`
+token and the version is found by exactly one match in `DESCRIBE HISTORY` (fail
+closed), so a concurrent OPTIMIZE commit cannot be mistaken for the write.
+
+Original checks unchanged: the numerator still excludes the 32 reviewed rows,
+`repaired` and the worst-snapshot rate are computed exactly as before (from
+`_unreviewed_invalid`), the comparison stays `<= 0.001`, and in full mode the
+history terms are 0 so the gate equals the original one. Pinned by
+`test_original_gate_semantics_pinned`. The 17 real-Spark tests are skipped
+locally (no JVM) and remain UNVERIFIED: no end-to-end equivalence is claimed.
+
+Incremental production writes remain blocked (`INCREMENTAL_WRITE_BLOCKERS`);
+`run_mode` defaults to `full`.

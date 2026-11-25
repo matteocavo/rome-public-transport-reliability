@@ -12,6 +12,7 @@
 
 import hashlib
 import json
+import uuid
 from pyspark.sql import functions as F
 
 spark.conf.set("spark.sql.session.timeZone", "Europe/Rome")
@@ -166,10 +167,10 @@ def overlap_difference(existing, new, upto):
 
 # Incremental WRITES stay disabled until every blocker below is proven on Databricks and removed in a reviewed change.
 INCREMENTAL_WRITE_BLOCKERS = (
-    "global_invalid_gate: the original 0.1% gate is cumulative over all Bronze; invalid rows are dropped from "
-    "Silver so the retained history's invalid count is not recoverable. A per-window gate is NOT equivalent: "
-    "with overlapping replaced tails it can pass every window while the cumulative rate exceeds 0.1% "
-    "(a cleaner re-computed tail replaces a dirtier one). Stateless upper bound seen on Databricks: ~0.25%.",
+    "cumulative_gate_not_validated_on_databricks: the 0.1% gate is now reconstructed from the quarantine ledger "
+    "(unit-tested equivalent to the full gate) but has never run on production tables. Remove this blocker only in "
+    "a reviewed change after (1) one full run has created the ledger and (2) an incremental_shadow run on the real "
+    "tables reports SHADOW_MATCH and a cumulative gate equal to the full-run gate.",
     # Resolved with Databricks evidence (2026-11-24), no longer blockers: delta_replacewhere (isolated Delta table: out-of-window
     # rows, schema mismatch and reruns behave as required) and late_arrival_checkpoint (lag 1..901 s vs 3600 s margin +
     # fail-closed count_late_arrivals). Efficiency of replaceWhere on the unpartitioned Silver tables is still unmeasured.
@@ -214,6 +215,23 @@ def check_replace_window(frame, target_schema, start):
         raise ValueError("replaceWhere: rows outside the replaced window; write blocked")
 
 
+def find_write_version(history_rows, token):
+    """Version of OUR commit: the one whose userMetadata equals the unique write token.
+    `DESCRIBE HISTORY LIMIT 1` may return an auto OPTIMIZE/VACUUM commit instead of the write."""
+    matches = [int(row["version"]) for row in history_rows if row["userMetadata"] == token]
+    if len(matches) != 1:
+        raise ValueError(f"write commit not uniquely identified ({len(matches)} matches); stop downstream")
+    return matches[0]
+
+
+def new_write_token(purpose):
+    return f"rmi-silver06:{purpose}:{uuid.uuid4().hex}"
+
+
+def tagged_write_version(destination, token):
+    return find_write_version(spark.sql(f"DESCRIBE HISTORY {destination} LIMIT 50").collect(), token)
+
+
 def replace_window(frame, destination, start, expected_window_rows):
     """Idempotent replaceWhere of exactly [start, +inf) with before/after conservation checks."""
     start = int(start)
@@ -222,8 +240,10 @@ def replace_window(frame, destination, start, expected_window_rows):
     check_replace_window(frame, before.schema, start)
     before_total = before.count()
     before_window = before.filter(predicate).count()
-    frame.write.format("delta").mode("overwrite").option("replaceWhere", predicate).saveAsTable(destination)
-    version = int(spark.sql(f"DESCRIBE HISTORY {destination} LIMIT 1").first()["version"])
+    token = new_write_token("replace")
+    (frame.write.format("delta").mode("overwrite").option("replaceWhere", predicate)
+        .option("userMetadata", token).saveAsTable(destination))
+    version = tagged_write_version(destination, token)
     saved = spark.read.option("versionAsOf", version).table(destination)
     if (saved.count() != before_total - before_window + expected_window_rows
             or saved.filter(predicate).count() != expected_window_rows):
@@ -250,11 +270,9 @@ if RUN_MODE != "full":
         assert_safety_margin(read_widget("safety_window_seconds", 3600)), read_widget("max_window_seconds", 21600))
     SCOPE_START = INCREMENTAL_PLAN["start"]
     VP_SCOPE_START = SCOPE_START - VP_MAX_STALENESS_SECONDS
+    # Silver only: the quarantine ledger now holds old invalid rows, so its max ingestion is sparse and stale
+    # and would raise false late-arrival alarms. Silver is written after the ledger and is never ahead of it.
     _tu_cutoff = _silver["trip_updates"].agg(F.max("_ingestion_timestamp")).first()[0]
-    _quarantine_cutoff = spark.table("rome_transport.silver.trip_updates_quarantine").agg(
-        F.max("_ingestion_timestamp")).first()[0]
-    # Conservative: the OLDEST cutoff is used so a partially advanced table cannot hide late rows (heuristic only).
-    _tu_cutoff = min([c for c in (_tu_cutoff, _quarantine_cutoff) if c is not None], default=None)
     _vp_cutoff = _silver["vehicle_positions"].agg(F.max("_ingestion_timestamp")).first()[0]
     if count_late_arrivals(sources["trip_updates"], SCOPE_START, _tu_cutoff):
         raise ValueError("trip_updates: late arrival older than the safety window; write blocked")
@@ -579,23 +597,95 @@ def validate_service_date_conservation(total, silver_rows, reviewed_rows, invali
         raise ValueError("trip_updates conservation violated; write blocked")
 
 
-def write_reviewed_quarantine(frame, expected_keys):
-    """Overwrite the reviewed isolation first; verify actual persisted identities."""
-    if len(expected_keys) != len(set(expected_keys)):
+QUARANTINE_TABLE = "rome_transport.silver.trip_updates_quarantine"
+LEDGER_PROPERTY = "rmi.quarantine_ledger"
+LEDGER_VERSION = "v1"
+
+
+def cumulative_gate_counts(silver_hist, quarantine_hist, reviewed_hist, window_total, window_invalid):
+    """Numerator/denominator of the ORIGINAL cumulative 0.1% gate, rebuilt without Bronze.
+
+    Full mode: total = every deduplicated row, invalid = rows with no service date that are NOT reviewed.
+    Incremental: the retained history is Silver(ts<S) + quarantine ledger(ts<S) (every invalid row, reviewed or not);
+    reviewed rows are in the ledger but excluded from the numerator, exactly as in full mode. The window counts
+    cover ts>=S only, so overlapping windows are never counted twice. Fail closed on impossible counts."""
+    values = (silver_hist, quarantine_hist, reviewed_hist, window_total, window_invalid)
+    if any(type(value) is not int or value < 0 for value in values):
+        raise ValueError("invalid cumulative gate counts; write blocked")
+    if reviewed_hist > quarantine_hist or window_invalid > window_total:
+        raise ValueError("inconsistent cumulative gate counts; write blocked")
+    return {"total": silver_hist + quarantine_hist + window_total,
+            "invalid": quarantine_hist - reviewed_hist + window_invalid}
+
+
+def require_ledger_ready(table_properties):
+    """Incremental mode needs a ledger certified COHERENT with Silver. The marker is withdrawn before the first
+    write of ANY run and restored only after ledger + all Silver outputs are written and verified, so an absent
+    marker means 'never built' or 'interrupted write': only a completed full rebuild reconciles it (fail closed)."""
+    if table_properties.get(LEDGER_PROPERTY) != LEDGER_VERSION:
+        raise ValueError("quarantine ledger absent or not certified (incomplete write?): "
+                         "run a full rebuild to reconcile; incremental advancement blocked")
+
+
+def withdraw_ledger_marker():
+    """Called before the first write of every persistence sequence (full and incremental)."""
+    if spark.catalog.tableExists(QUARANTINE_TABLE):
+        spark.sql(f"ALTER TABLE {QUARANTINE_TABLE} UNSET TBLPROPERTIES IF EXISTS ('{LEDGER_PROPERTY}')")
+
+
+def certify_ledger():
+    """Called only after ledger and every Silver output were written AND read back successfully."""
+    spark.sql(f"ALTER TABLE {QUARANTINE_TABLE} SET TBLPROPERTIES ('{LEDGER_PROPERTY}' = '{LEDGER_VERSION}')")
+
+
+def historical_gate_counts(start):
+    """Counts below the window: metadata-pruned count(*) on the two Delta tables, no Bronze scan."""
+    props = {row["key"]: row["value"] for row in spark.sql(f"SHOW TBLPROPERTIES {QUARANTINE_TABLE}").collect()}
+    require_ledger_ready(props)
+    before = F.col("feed_timestamp") < F.lit(int(start))
+    silver_hist = spark.table("rome_transport.silver.trip_updates").filter(before).count()
+    ledger = spark.table(QUARANTINE_TABLE).filter(before).agg(
+        F.count("*").alias("n"),
+        F.count(F.when(reviewed_service_date_exception_expr(REVIEWED_SERVICE_DATE_EXCEPTIONS), 1)).alias("reviewed"),
+    ).first()
+    return int(silver_hist), int(ledger["n"]), int(ledger["reviewed"])
+
+
+def reviewed_keys_of(frame, limit):
+    rows = frame.filter(reviewed_service_date_exception_expr(REVIEWED_SERVICE_DATE_EXCEPTIONS)).select(
+        *trip_updates_dedup_key).limit(limit).collect()
+    return sorted(tuple(str(value) for value in row) for row in rows)
+
+
+def write_quarantine_ledger(frame, expected_reviewed_keys, expected_rows, start=None):
+    """Persist EVERY row with no service date (reviewed + unreviewed) before Silver.
+    Reviewed rows keep their identity and are re-derived from the registry on read.
+    start=None: full overwrite. start=int: idempotent replaceWhere of [start, +inf) only.
+    Never certifies: the caller withdraws the marker first and certifies after ALL outputs are written."""
+    expected_reviewed_keys = sorted(expected_reviewed_keys)
+    if len(expected_reviewed_keys) != len(set(expected_reviewed_keys)):
         raise ValueError("duplicate quarantine identity; write blocked")
     registered = {key for snapshot, entry in REVIEWED_SERVICE_DATE_EXCEPTIONS.items()
                   for key in reviewed_exception_keys(snapshot, entry)}
-    if not set(expected_keys).issubset(registered):
+    if not set(expected_reviewed_keys).issubset(registered):
         raise ValueError("unreviewed quarantine identity; write blocked")
-    destination = "rome_transport.silver.trip_updates_quarantine"
-    frame.write.format("delta").mode("overwrite").option("overwriteSchema", "true").saveAsTable(destination)
-    saved = spark.table(destination)
-    if saved.schema != frame.schema:
-        raise ValueError("quarantine read-back schema mismatch; stop downstream")
-    actual_keys = [tuple(str(value) for value in row)
-                   for row in saved.select(*trip_updates_dedup_key).limit(len(registered) + 1).collect()]
-    if sorted(actual_keys) != sorted(expected_keys):
+    if start is not None:
+        version = replace_window(frame, QUARANTINE_TABLE, start, expected_rows)
+        saved = spark.read.option("versionAsOf", version).table(QUARANTINE_TABLE).filter(
+            F.col("feed_timestamp") >= F.lit(int(start)))
+    else:
+        token = new_write_token("ledger-full")
+        (frame.write.format("delta").mode("overwrite").option("overwriteSchema", "true")
+            .option("userMetadata", token).saveAsTable(QUARANTINE_TABLE))
+        version = tagged_write_version(QUARANTINE_TABLE, token)
+        saved = spark.read.option("versionAsOf", version).table(QUARANTINE_TABLE)
+        if saved.schema != frame.schema:
+            raise ValueError("quarantine read-back schema mismatch; stop downstream")
+        if saved.count() != expected_rows:
+            raise ValueError("quarantine read-back count mismatch; stop downstream")
+    if reviewed_keys_of(saved, len(registered) + 1) != expected_reviewed_keys:
         raise ValueError("quarantine read-back identity mismatch; stop downstream")
+    return version
 
 
 trip_updates_silver = trip_updates_silver.withColumn(
@@ -621,41 +711,52 @@ if date_metrics["invalid"]:
     print({"service_date_invalid_samples": [
         {"value": str(row[0])[:32], "parseable": normalize_service_date(row[0]) is not None}
         for row in samples]})
-print({"service_date_quality_before_gate": date_metrics,
-       "worst_snapshot_invalid_rate": worst_snapshot_rate})
+# Cumulative gate: window counts + retained history (Silver + quarantine ledger below the window).
+_hist = (0, 0, 0) if RUN_MODE == "full" else historical_gate_counts(SCOPE_START)
+gate_counts = cumulative_gate_counts(*_hist, date_metrics["total"], date_metrics["invalid"])
+print({"service_date_quality_before_gate": date_metrics, "history": dict(zip(
+           ("silver_rows", "ledger_rows", "reviewed_rows"), _hist)),
+       "cumulative_gate": gate_counts, "worst_snapshot_invalid_rate_window": worst_snapshot_rate})
 try:
     service_date_quality = validate_service_date_quality(
-        date_metrics["total"], date_metrics["invalid"], date_metrics["repaired"],
+        gate_counts["total"], gate_counts["invalid"], date_metrics["repaired"],
         worst_snapshot_rate)
 except ValueError:
     print({"service_date_quality_status": "REJECTED", "write_blocked": True})
     raise
-quarantine_df = trip_updates_silver.filter(F.col("service_date").isNull() & F.col("_reviewed_exception")).drop(
-    "_service_date_repaired", "_reviewed_exception")
-quarantine_count = quarantine_df.count()
-if quarantine_count > sum(e["n"] for e in REVIEWED_SERVICE_DATE_EXCEPTIONS.values()):
+_quarantine_all = trip_updates_silver.filter(F.col("service_date").isNull())
+_q = _quarantine_all.agg(F.count("*").alias("n"),
+                         F.count(F.when(F.col("_reviewed_exception"), 1)).alias("reviewed")).first()
+quarantine_count, reviewed_count = int(_q["n"]), int(_q["reviewed"])
+quarantine_df = _quarantine_all.drop("_service_date_repaired", "_reviewed_exception")
+_registry_rows = sum(e["n"] for e in REVIEWED_SERVICE_DATE_EXCEPTIONS.values())
+if reviewed_count > _registry_rows:
     raise ValueError("quarantine larger than reviewed registry; write blocked")
-if RUN_MODE != "full" and quarantine_count not in (0, sum(e["n"] for e in REVIEWED_SERVICE_DATE_EXCEPTIONS.values())):
-    # The quarantine table is a full-registry table: a partial slice must never overwrite it.
-    raise ValueError("incremental: partial quarantine slice; run the explicit full rebuild")
+if RUN_MODE != "full" and reviewed_count not in (0, _registry_rows):
+    # The registry is a single snapshot: a window holds all of it or none of it.
+    raise ValueError("incremental: partial reviewed slice; run the explicit full rebuild")
+if quarantine_count != reviewed_count + date_metrics["invalid"]:
+    raise ValueError("quarantine ledger count mismatch; write blocked")
 trip_updates_silver = trip_updates_silver.filter(F.col("service_date").isNotNull()).drop(
     "_service_date_raw", "_service_date_repaired", "_reviewed_exception")
 silver_filtered_count = trip_updates_silver.count()
 validate_service_date_conservation(
-    date_metrics["total"], silver_filtered_count, quarantine_count, date_metrics["invalid"])
+    date_metrics["total"], silver_filtered_count, reviewed_count, date_metrics["invalid"])
 # The unchanged gate counts only unreviewed invalids. Keep its diagnostics honest:
 # reviewed rows are also excluded, and must not be reported as valid Silver rows.
 service_date_quality.update(
-    reviewed_quarantine_rows=quarantine_count,
-    excluded_rows=quarantine_count + date_metrics["invalid"],
+    reviewed_quarantine_rows=reviewed_count,
+    excluded_rows=quarantine_count,
+    cumulative_total_rows=gate_counts["total"],
+    cumulative_invalid_rows=gate_counts["invalid"],
     valid_rows=silver_filtered_count - date_metrics["repaired"],
 )
-quarantine_keys = [tuple(str(value) for value in row)
-                   for row in quarantine_df.select(*trip_updates_dedup_key).limit(33).collect()]
-if len(quarantine_keys) != quarantine_count:
+quarantine_keys = reviewed_keys_of(_quarantine_all, _registry_rows + 1)
+if len(quarantine_keys) != reviewed_count:
     raise ValueError("quarantine key count mismatch; write blocked")
 print({"service_date_quality": service_date_quality})
-print({"quarantine_rows": quarantine_count, "unreviewed_invalid_dropped": date_metrics["invalid"],
+print({"quarantine_rows": quarantine_count, "reviewed_rows": reviewed_count,
+       "unreviewed_invalid_dropped": date_metrics["invalid"],
        "silver_rows": silver_filtered_count})
 if trip_updates_silver.filter(F.col("service_date").isNull()).limit(1).count():
     raise ValueError("trip_updates: invalid service date escaped isolation; write blocked")
@@ -883,21 +984,23 @@ if RUN_MODE != "full":
         verdict = classify_shadow(differences, EXPECTED_SHADOW_DIFFERENCES)
         print({"run_mode": RUN_MODE, "written": False, "shadow_verdict": verdict,
                "write_blockers": list(INCREMENTAL_WRITE_BLOCKERS),
-               "gate_scope": "window_only_NOT_equivalent_to_original"})
+               "gate_scope": "cumulative_ledger", "cumulative_gate": gate_counts})
         if verdict["status"] == "SHADOW_FAILED":
             raise ValueError("incremental_shadow FAIL: unexplained overlap differences vs published Silver")
     elif not (ALLOW_SILVER_OVERWRITE and ALLOW_INCREMENTAL_WRITE):
         raise RuntimeError("Incremental validation passed; write disabled until both write widgets are true")
     else:
         assert_incremental_write_allowed(INCREMENTAL_WRITE_BLOCKERS)   # raises before ANY write
-        # Quarantine only when this window actually contains the reviewed rows; otherwise it stays untouched.
-        if quarantine_count:
-            write_reviewed_quarantine(quarantine_df, quarantine_keys)
-        # Order matters: observations LAST so 07 never reads a half-run. A partial write is repaired by
-        # re-running the same window (min-watermark planner + idempotent replaceWhere).
+        withdraw_ledger_marker()   # fail closed: any crash below leaves the ledger uncertified
+        # Ledger window FIRST (even when empty: stale invalids of the replaced window must be cleared).
+        written_ledger_version = write_quarantine_ledger(quarantine_df, quarantine_keys, quarantine_count, SCOPE_START)
+        # Order matters: observations LAST so 07 never reads a half-run. A partial write leaves the marker
+        # withdrawn, which blocks every later incremental run until a full rebuild reconciles the tables.
         written_versions = {name: replace_window(frame, "rome_transport.silver." + name, SCOPE_START,
                                                  expected_counts[name])
                             for name, frame in outputs.items()}
+        written_versions["trip_updates_quarantine"] = written_ledger_version
+        certify_ledger()
         print({"source_versions": source_versions, "written_versions": written_versions,
                "window_start": SCOPE_START, "counts": expected_counts, "quality_status": "PASSED"})
     dbutils.notebook.exit(json.dumps({"run_mode": RUN_MODE, "status": "DONE"}))
@@ -906,15 +1009,18 @@ if RUN_MODE != "full":
 if not ALLOW_SILVER_OVERWRITE:
     raise RuntimeError("Silver validation passed; overwrite disabled until explicitly authorized")
 # Quarantine FIRST (full rebuild, idempotent); Silver observations stay LAST so 07 never sees a half-run.
-write_reviewed_quarantine(quarantine_df, quarantine_keys)
-written_versions = {}
+withdraw_ledger_marker()   # fail closed until every table below is written and verified
+written_versions = {"trip_updates_quarantine": write_quarantine_ledger(
+    quarantine_df, quarantine_keys, quarantine_count)}
 for name, frame in outputs.items():
     destination = "rome_transport.silver." + name
-    frame.write.format("delta").mode("overwrite").saveAsTable(destination)
-    version = int(spark.sql(f"DESCRIBE HISTORY {destination} LIMIT 1").first()["version"])
+    token = new_write_token("full")
+    frame.write.format("delta").mode("overwrite").option("userMetadata", token).saveAsTable(destination)
+    version = tagged_write_version(destination, token)
     saved = spark.read.option("versionAsOf", version).table(destination)
     if saved.count() != expected_counts[name]:
         raise ValueError(f"{name}: read-back count mismatch; stop downstream")
     written_versions[name] = version
+certify_ledger()
 print({"source_versions": source_versions, "written_versions": written_versions,
        "counts": expected_counts, "quality_status": "PASSED"})

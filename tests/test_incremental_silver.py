@@ -9,6 +9,7 @@ import shutil
 import sys
 import subprocess
 import unittest
+import uuid
 from pathlib import Path
 
 try:
@@ -21,12 +22,15 @@ ROOT = Path(__file__).resolve().parents[1]
 N06 = (ROOT / "notebooks/06_gtfs_realtime_silver.py").read_text(encoding="utf-8")
 N07 = (ROOT / "notebooks/07_gtfs_realtime_enrichment.py").read_text(encoding="utf-8")
 SHARED = {"RUN_MODES", "VP_MAX_STALENESS_SECONDS", "MAX_INVALID_SERVICE_DATE_RATE",
-          "INCREMENTAL_WRITE_BLOCKERS", "EXPECTED_SHADOW_DIFFERENCES", "OBSERVED_MAX_INGESTION_LAG_SECONDS"}
+          "INCREMENTAL_WRITE_BLOCKERS", "EXPECTED_SHADOW_DIFFERENCES", "OBSERVED_MAX_INGESTION_LAG_SECONDS",
+          "QUARANTINE_TABLE", "LEDGER_PROPERTY", "LEDGER_VERSION"}
 FUNCS = {"resolve_run_mode", "parse_positive_int", "plan_incremental_window", "plan_enrichment_window",
          "assert_epoch_column", "scope_from", "vehicle_epoch_expr", "count_late_arrivals",
          "count_vp_lookback_escapes", "lost_window_keys", "overlap_difference", "replace_window",
          "deduplicate_latest", "validate_service_date_quality", "classify_shadow",
-         "assert_incremental_write_allowed", "check_replace_window", "assert_safety_margin"}
+         "assert_incremental_write_allowed", "check_replace_window", "assert_safety_margin",
+         "find_write_version", "new_write_token", "tagged_write_version", "cumulative_gate_counts",
+         "require_ledger_ready"}
 SHARED_EXTRA = {"INCREMENTAL_WRITE_BLOCKERS", "EXPECTED_SHADOW_DIFFERENCES"}
 KEY = ["feed_timestamp", "entity_id", "trip_id", "stop_sequence", "stop_id"]
 
@@ -59,8 +63,8 @@ class IncrementalTests(unittest.TestCase):
                          .config("spark.ui.enabled", "false").config("spark.sql.shuffle.partitions", "2").getOrCreate())
         except Exception as exc:  # no JVM available
             raise unittest.SkipTest(f"Spark unavailable: {exc}")
-        cls.n06 = extract(N06, {"F": F})
-        cls.n07 = extract(N07, {"F": F})
+        cls.n06 = extract(N06, {"F": F, "uuid": uuid})
+        cls.n07 = extract(N07, {"F": F, "uuid": uuid})
 
     @classmethod
     def tearDownClass(cls):
@@ -277,7 +281,8 @@ class IncrementalTests(unittest.TestCase):
         allowed(())   # only an explicit reviewed removal of every blocker opens the gate
         for text in (N06, N07):   # the blocker check precedes the first write call
             call = text.index("assert_incremental_write_allowed(INCREMENTAL_WRITE_BLOCKERS)")
-            self.assertGreater(text.index("replace_window(", call), call)       # a write call follows the guard
+            writes = [text.find(w, call) for w in ("write_quarantine_ledger(", "replace_window(")]
+            self.assertGreater(min(i for i in writes if i >= 0), call)           # a write call follows the guard
         self.assertIn("window_only_NOT_equivalent", N06)
 
     def test_safety_margin_floor_is_fail_closed(self):
