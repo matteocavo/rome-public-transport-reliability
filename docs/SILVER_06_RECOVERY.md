@@ -157,3 +157,31 @@ and is itself a write requiring explicit authorization; if versions are not
 restorable, stop rather than improvising. A newly created quarantine is retained
 for evidence, not automatically dropped. Do not change Bronze, model, threshold,
 Neon, Render or GitHub schedules. Reverting code alone does not revert data.
+
+## Cumulative 0.1% gate and quarantine ledger (incremental mode)
+
+The quarantine table keeps its schema but now holds ALL rows with
+`service_date IS NULL` (the 32 reviewed rows plus unreviewed invalids). Reviewed
+vs unreviewed is derived on read via `reviewed_service_date_exception_expr`; the
+32 reviewed keys, hashes and fingerprint are unchanged. The only readers are
+notebook 06, `tests/test_silver06_recovery.py` and this document (audited; none
+in notebooks 07/08/13, `app/` or SQL).
+
+For an incremental window starting at S (no Bronze scan):
+`invalid_hist = ledger(ts<S) - reviewed(ts<S)`, `total_hist = silver(ts<S) + ledger(ts<S)`,
+gate = `(invalid_hist + window_invalid) / (total_hist + window_total) <= 0.001`,
+identical to full mode. The ledger is rewritten per window with
+`replaceWhere feed_timestamp >= S` (no double counting in overlaps); full mode
+overwrites it entirely.
+
+Safety: the table property `rmi.quarantine_ledger=v1` is unset before a full
+write and set only after a verified write; incremental mode requires it. The
+ledger is written BEFORE Silver, so it is never behind Silver; rerunning the same
+or an earlier window repairs a partial write. An unrepaired partial followed by
+a later window yields silently wrong historical counts (undetectable without
+Bronze): residual risk. Each write carries a unique `userMetadata` token and the
+version is found by exactly one match in `DESCRIBE HISTORY` (fail closed), so a
+concurrent OPTIMIZE commit cannot be mistaken for the write.
+
+Incremental production writes remain blocked (`INCREMENTAL_WRITE_BLOCKERS`);
+`run_mode` defaults to `full`.
