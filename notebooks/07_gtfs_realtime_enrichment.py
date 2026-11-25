@@ -188,11 +188,16 @@ def shadow_exit_payload(verdict, differences, window_rows, plan, blockers):
                        "source_max_feed_utc": iso(plan["source_max_feed"]),
                        "window_seconds": int(plan["window_seconds"])},
             "write_blockers": list(blockers)}
+def schemas_compatible(left, right):
+    """Ordered (name, type) equality; nullability and column metadata (e.g. Delta comments) are ignored."""
+    return [(f.name, f.dataType.simpleString()) for f in left.fields] == [
+        (f.name, f.dataType.simpleString()) for f in right.fields]
+
+
 def check_replace_window(frame, target_schema, start):
     """Delta replaceWhere preconditions: identical ordered schema and every row inside the predicate
     (a row outside, or with NULL feed_timestamp, would violate Delta's replaceWhere constraint check)."""
-    if [(f.name, f.dataType.simpleString()) for f in frame.schema.fields] != [
-            (f.name, f.dataType.simpleString()) for f in target_schema.fields]:
+    if not schemas_compatible(frame.schema, target_schema):
         raise ValueError("replaceWhere: schema/column order differs from target; write blocked")
     assert_epoch_column(frame)
     outside = frame.filter(~(F.col("feed_timestamp") >= F.lit(int(start))) | F.col("feed_timestamp").isNull())
@@ -915,8 +920,8 @@ if RUN_MODE == "full":
     print(f"Saved {OUTPUT_TABLE}")
 else:
     existing_output = spark.table(OUTPUT_TABLE)
-    # Fail closed: identical schema (names, order, types) and a window reaching the source maximum.
-    if existing_output.schema != enriched_observations.schema:
+    # Fail closed: same names, order and types (nullability and column comments ignored) and a window reaching the source maximum.
+    if not schemas_compatible(existing_output.schema, enriched_observations.schema):
         raise ValueError("Incremental schema differs from the existing output; write blocked, run the explicit full rebuild")
     if enriched_observations.agg(F.max("feed_timestamp")).first()[0] != INCREMENTAL_PLAN["source_max_feed"]:
         raise ValueError("Incremental window does not reach the source maximum; write blocked")
