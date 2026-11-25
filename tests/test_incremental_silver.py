@@ -317,6 +317,35 @@ class IncrementalTests(unittest.TestCase):
             self.assertIn('read_widget("run_mode", "full")', text)
             self.assertIn('read_widget("allow_incremental_write", "false")', text)
 
+    def test_07_shadow_overlap_compares_only_the_window_not_the_full_history(self):
+        NS = self.n07
+        diff_of, classify, scope = NS["overlap_difference"], NS["classify_shadow"], NS["scope_from"]
+        schema = "feed_timestamp long, entity_id string, trip_id string, stop_sequence int, stop_id string"
+        name = "realtime_trip_stop_observations_enriched"
+        start, watermark = 50, 90
+        history = [(t, f"e{t}", "T", 1, "S") for t in range(0, 100, 10)]   # published output, includes pre-window rows
+        existing = self.frame(history, schema)
+        recomputed = self.frame([r for r in history if r[0] >= start], schema)   # window-only recompute
+        # the pre-fix call (full history vs window-only) reproduces the false SHADOW_FAILED
+        stale = {name: diff_of(existing, recomputed, watermark)}
+        self.assertEqual(stale[name], {"only_existing": 5, "only_incremental": 0})
+        self.assertEqual(classify(stale, {})["status"], "SHADOW_FAILED")
+        # call-site contract: scope the existing output to [start, watermark] before comparing
+        clean = {name: diff_of(scope(existing, start), recomputed, watermark)}
+        self.assertEqual(clean[name], {"only_existing": 0, "only_incremental": 0})
+        self.assertEqual(classify(clean, {})["status"], "SHADOW_MATCH")
+        # boundaries are inclusive: a row exactly at start and one exactly at the watermark are compared
+        edge = recomputed.withColumn("trip_id", F.when(F.col("feed_timestamp").isin(start, watermark), "X").otherwise(F.col("trip_id")))
+        self.assertEqual(diff_of(scope(existing, start), edge, watermark), {"only_existing": 2, "only_incremental": 2})
+        # multiplicity is preserved (exceptAll): a duplicated recomputed row is a difference
+        dup = recomputed.unionByName(self.frame([(60, "e60", "T", 1, "S")], schema))
+        self.assertEqual(diff_of(scope(existing, start), dup, watermark), {"only_existing": 0, "only_incremental": 1})
+        # a real difference inside the window still fails the shadow
+        changed = recomputed.withColumn("trip_id", F.when(F.col("feed_timestamp") == 70, "X").otherwise(F.col("trip_id")))
+        real = {name: diff_of(scope(existing, start), changed, watermark)}
+        self.assertEqual(real[name], {"only_existing": 1, "only_incremental": 1})
+        self.assertEqual(classify(real, {})["status"], "SHADOW_FAILED")
+
 
 class SchemaGuardTest(unittest.TestCase):
     """Pure schema comparison; needs neither Spark nor PySpark (minimal StructType stand-ins)."""
@@ -405,6 +434,16 @@ class ShadowExitPayloadTest(unittest.TestCase):
         self.assertRegex(N07, r'if RUN_MODE == "incremental_shadow":\s+dbutils\.notebook\.exit')
         self.assertIn("_verdict, _diff,", N07)
         self.assertIn("assert_incremental_write_allowed(INCREMENTAL_WRITE_BLOCKERS)", N07)
+
+    def test_07_shadow_overlap_call_site_uses_scoped_window_and_keeps_guards(self):
+        # Spark-free (runs in CI): the shadow branch compares the scoped window, never the full history
+        self.assertIn("existing_window = scope_from(existing_output, SCOPE_START)", N07)
+        self.assertRegex(N07, r'overlap_difference\(\s*existing_window, enriched_observations, INCREMENTAL_PLAN\["watermark"\]\)')
+        self.assertNotRegex(N07, r'overlap_difference\(\s*existing_output')
+        self.assertIn('feed_timestamp") <= F.lit(int(upto))', N07)   # upper bound kept
+        self.assertIn("EXPECTED_SHADOW_DIFFERENCES = {}", N07)
+        self.assertIn("INCREMENTAL_WRITE_BLOCKERS", N07)
+
 
 if __name__ == "__main__":
     unittest.main()
