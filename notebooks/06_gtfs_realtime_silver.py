@@ -203,6 +203,26 @@ def classify_shadow(differences, documented):
     return {"status": status, "unexplained": unexplained, "documented": explained}
 
 
+def shadow_exit_payload(verdict, differences, window_rows, plan, gate_counts):
+    """Structured, JSON-serialisable shadow result returned via dbutils.notebook.exit (stdout of the exit cell is
+    not captured in job run exports). Only SHADOW_MATCH is a complete pass; documented differences are not."""
+    from datetime import datetime, timezone
+    iso = lambda epoch: datetime.fromtimestamp(int(epoch), timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return {"run_mode": "incremental_shadow", "status": "DONE", "written": False,
+            "shadow_verdict": verdict["status"], "shadow_pass": verdict["status"] == "SHADOW_MATCH",
+            "unexplained": verdict["unexplained"], "documented": verdict["documented"],
+            "tables": {name: {"window_rows": int(window_rows[name]),
+                              "only_existing": int(diff["only_existing"]),
+                              "only_incremental": int(diff["only_incremental"])}
+                       for name, diff in differences.items()},
+            "window": {"start": int(plan["start"]), "start_utc": iso(plan["start"]),
+                       "watermark": int(plan["watermark"]), "watermark_utc": iso(plan["watermark"]),
+                       "source_max_feed": int(plan["source_max_feed"]),
+                       "source_max_feed_utc": iso(plan["source_max_feed"]),
+                       "window_seconds": int(plan["window_seconds"])},
+            "cumulative_gate": {k: int(v) for k, v in gate_counts.items()}}
+
+
 def check_replace_window(frame, target_schema, start):
     """Delta replaceWhere preconditions: identical ordered schema and every row inside the predicate
     (a row outside, or with NULL feed_timestamp, would violate Delta's replaceWhere constraint check)."""
@@ -1003,7 +1023,9 @@ if RUN_MODE != "full":
         certify_ledger()
         print({"source_versions": source_versions, "written_versions": written_versions,
                "window_start": SCOPE_START, "counts": expected_counts, "quality_status": "PASSED"})
-    dbutils.notebook.exit(json.dumps({"run_mode": RUN_MODE, "status": "DONE"}))
+    dbutils.notebook.exit(json.dumps(
+        shadow_exit_payload(verdict, differences, expected_counts, INCREMENTAL_PLAN, gate_counts)
+        if RUN_MODE == "incremental_shadow" else {"run_mode": RUN_MODE, "status": "DONE"}))
 
 # Full rebuild (default).
 if not ALLOW_SILVER_OVERWRITE:
