@@ -930,7 +930,7 @@ else:
         raise ValueError("Incremental window would drop published observation keys; write blocked")
     if RUN_MODE == "incremental_shadow":
         _diff = {"realtime_trip_stop_observations_enriched": overlap_difference(
-            existing_output, enriched_observations, INCREMENTAL_PLAN["watermark"])}
+            existing_window, enriched_observations, INCREMENTAL_PLAN["watermark"])}
         _verdict = classify_shadow(_diff, EXPECTED_SHADOW_DIFFERENCES)
         print({"shadow_verdict": _verdict, "written": False, "write_blockers": list(INCREMENTAL_WRITE_BLOCKERS)})
         if _verdict["status"] == "SHADOW_FAILED":
