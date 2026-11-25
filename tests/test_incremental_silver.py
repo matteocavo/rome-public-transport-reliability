@@ -321,7 +321,7 @@ class ShadowExitPayloadTest(unittest.TestCase):
     """Pure-Python: no Spark needed."""
 
     def test_shadow_exit_payload_exposes_verdict_and_only_match_passes(self):
-        NS = extract(N06, {"F": F, "uuid": uuid})
+        NS = extract(N06, {"F": globals().get("F"), "uuid": uuid})
         build, classify = NS["shadow_exit_payload"], NS["classify_shadow"]
         plan = {"start": 1795606181, "watermark": 1795609781, "source_max_feed": 1795613345, "window_seconds": 7164}
         gate = {"total": 97208375, "invalid": 2}
