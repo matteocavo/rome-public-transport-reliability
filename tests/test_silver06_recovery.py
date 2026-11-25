@@ -59,7 +59,8 @@ def production_scope():
              'reviewed_service_date_exception_expr', 'validate_service_date_conservation',
              'validate_service_date_quality', 'find_write_version', 'new_write_token',
              'tagged_write_version', 'cumulative_gate_counts', 'require_ledger_ready',
-             'reviewed_keys_of', 'write_quarantine_ledger'}
+             'reviewed_keys_of', 'write_quarantine_ledger',
+             'withdraw_ledger_marker', 'certify_ledger'}
     constants = {'REVIEWED_SERVICE_DATE_EXCEPTIONS', 'MAX_INVALID_SERVICE_DATE_RATE',
                  'QUARANTINE_TABLE', 'LEDGER_PROPERTY', 'LEDGER_VERSION'}
     body = [node for node in TREE.body if
@@ -167,10 +168,14 @@ def full_truth(bronze):
 
 
 class Model:
-    """Incremental store: quarantine ledger first, Silver last, both replaced with ts >= start."""
-    def __init__(self, scope): self.scope, self.silver, self.ledger = scope, [], []
+    """Incremental store: quarantine ledger first, Silver last, both replaced with ts >= start.
+    start == 0 is the full rebuild (the only reconciling run); start > 0 needs the certified marker."""
+    def __init__(self, scope):
+        self.scope, self.silver, self.ledger, self.certified = scope, [], [], False
 
     def run(self, bronze, start, crash_after_ledger=False):
+        if start > 0:   # historical_gate_counts -> require_ledger_ready, before anything is computed or written
+            self.scope['require_ledger_ready']({'rmi.quarantine_ledger': 'v1'} if self.certified else {})
         window = dedup([r for r in bronze if r['ts'] >= start])
         invalid = [r for r in window if r['date'] is None]
         valid = [r for r in window if r['date'] is not None]
@@ -181,9 +186,11 @@ class Model:
             sum(r['ts'] < start and (r['ts'], r['entity']) in REVIEWED for r in self.ledger),
             len(window), len(invalid) - len(reviewed_window))
         self.scope['validate_service_date_quality'](counts['total'], counts['invalid'], 0, 0.0)  # may raise: no writes
+        self.certified = False   # withdraw_ledger_marker before the first write
         self.ledger = [r for r in self.ledger if r['ts'] < start] + invalid
         if crash_after_ledger: return counts
         self.silver = [r for r in self.silver if r['ts'] < start] + valid
+        self.certified = True    # certify_ledger after every table is written
         return counts
 
     def state(self):
@@ -354,7 +361,7 @@ class Silver06RecoveryTest(unittest.TestCase):
         ready = self.scope['require_ledger_ready']
         ready({'rmi.quarantine_ledger': 'v1'})
         for props in [{}, {'rmi.quarantine_ledger': 'v0'}]:
-            with self.assertRaisesRegex(ValueError, 'not initialised'): ready(props)
+            with self.assertRaisesRegex(ValueError, 'not certified'): ready(props)
 
     # ---- equivalence with full mode, idempotency, overlap, late arrivals, partial writes ----
     def bronze(self, **kw):
@@ -396,18 +403,23 @@ class Silver06RecoveryTest(unittest.TestCase):
         with self.assertRaises(ValueError): model.run(worse, 1900)  # history (2) + window (1) = 3 / 2000 > 0.1%
         self.assertEqual(model.state(), before)
 
-    def test_partial_write_is_repaired_by_rerunning_same_or_earlier_window(self):
+    def test_partial_write_blocks_incremental_until_full_rebuild_reconciles(self):
         bronze = self.bronze()
         late_valid = bronze + [dict(ts=1500, entity='e2', date='20260101', ing=8000)]  # repairs a ledger row
         truth, ledger, silver = full_truth(late_valid)
-        for repair_start in [1500, 1000, 0]:
-            with self.subTest(repair_start=repair_start):
-                model = Model(self.scope); model.run(bronze, 0)
-                model.run(late_valid, 1500, crash_after_ledger=True)  # crash between the two Delta writes
-                self.assertNotEqual(model.state(), (ledger, silver))  # Silver still lacks the repaired row
-                self.assertNotIn((1500, 'e2'), model.state()[0])      # ledger is never behind Silver
-                self.assertEqual(model.run(late_valid, repair_start), truth)
-                self.assertEqual(model.state(), (ledger, silver))
+        model = Model(self.scope); model.run(bronze, 0)
+        model.run(late_valid, 1500, crash_after_ledger=True)  # crash between the Delta writes
+        self.assertFalse(model.certified)
+        self.assertNotEqual(model.state(), (ledger, silver))
+        before = model.state()
+        for later in [1500, 1000, 1900, 100]:   # neither the same, earlier nor later window may advance
+            with self.subTest(later=later):
+                with self.assertRaises(ValueError): model.run(late_valid, later)
+                self.assertEqual(model.state(), before)   # blocked before any write
+        self.assertEqual(model.run(late_valid, 0), truth)  # full rebuild reconciles and re-certifies
+        self.assertTrue(model.certified)
+        self.assertEqual(model.state(), (ledger, silver))
+        self.assertEqual(model.run(late_valid, 1500), truth)  # incremental advances again
 
     def test_reviewed_rows_survive_every_window_and_stay_out_of_the_gate(self):
         bronze = self.bronze(); model = Model(self.scope)
@@ -418,17 +430,20 @@ class Silver06RecoveryTest(unittest.TestCase):
         self.assertEqual(hashlib.sha256('\n'.join('|'.join(k) for k in sorted(self.keys)).encode()).hexdigest(), FINGERPRINT)
 
     # ---- marker lifecycle ----
-    def test_marker_is_withdrawn_before_full_write_and_restored_only_after_verification(self):
+    def test_ledger_writer_never_certifies(self):
         store = self.setup_store(); frame = Frame(self.keys, store)
         self.scope['write_quarantine_ledger'](frame, self.keys, 32)
-        self.assertEqual(store['events'], [('set', QUARANTINE)])  # first-ever write: no table to unset
-        store['events'].clear()
-        self.scope['write_quarantine_ledger'](frame, self.keys, 32)
-        self.assertEqual(store['events'], [('unset', QUARANTINE), ('set', QUARANTINE)])
-        store['events'].clear(); store['fail'] = QUARANTINE
-        with self.assertRaises(IOError): self.scope['write_quarantine_ledger'](frame, self.keys, 32)
-        self.assertEqual(store['events'], [('unset', QUARANTINE)])
-        self.assertNotIn('rmi.quarantine_ledger', store['props'][QUARANTINE])  # incremental stays blocked
+        self.assertEqual(store['events'], [])  # no set/unset: the caller owns the marker
+        self.assertNotIn('rmi.quarantine_ledger', store['props'].get(QUARANTINE, {}))
+
+    def test_withdraw_then_certify_lifecycle(self):
+        store = self.setup_store()
+        self.scope['withdraw_ledger_marker']()
+        self.assertEqual(store['events'], [])  # table absent: nothing to unset
+        store[QUARANTINE] = Frame(self.keys, store)
+        self.scope['certify_ledger'](); self.assertEqual(store['props'][QUARANTINE]['rmi.quarantine_ledger'], 'v1')
+        self.scope['withdraw_ledger_marker']()
+        self.assertNotIn('rmi.quarantine_ledger', store['props'][QUARANTINE])
 
     def test_incremental_window_write_does_not_touch_marker(self):
         store = self.setup_store(); store[QUARANTINE] = Frame(self.keys, store)
@@ -437,6 +452,38 @@ class Silver06RecoveryTest(unittest.TestCase):
         self.assertEqual(self.scope['write_quarantine_ledger'](Frame(self.keys, store), self.keys, 32, 1500), 7)
         self.assertEqual(calls, [(QUARANTINE, 1500, 32)])
         self.assertEqual(store['events'], [])
+
+    def test_original_gate_semantics_pinned(self):
+        """Widening the quarantine must not change what the original checks count (full mode: history is 0)."""
+        for fragment in (
+                '_unreviewed_invalid = F.col("service_date").isNull() & ~F.col("_reviewed_exception")',
+                'F.count(F.when(_unreviewed_invalid, 1)).alias("invalid"),   # reviewed exception rows are excluded',
+                'F.count(F.when(F.col("_service_date_repaired"), 1)).alias("repaired")',
+                'F.max(F.col("invalid") / F.col("total"))',
+                'trip_updates_silver.filter(_unreviewed_invalid).select(',
+                'gate_counts["total"], gate_counts["invalid"], date_metrics["repaired"],'):
+            self.assertEqual(SOURCE.count(fragment), 1, fragment)
+        full = self.scope['cumulative_gate_counts'](0, 0, 0, 1000, 7)   # full mode == window counts
+        self.assertEqual(full, {'total': 1000, 'invalid': 7})
+        self.assertEqual(self.scope['cumulative_gate_counts'](10, 5, 5, 20, 0), {'total': 35, 'invalid': 0})  # reviewed never counted
+        for invalid, ok in ((1, True), (2, False)):   # unchanged <= 0.1% comparison at 1000 rows
+            check = lambda: self.scope['validate_service_date_quality'](1000, invalid, 0, 0.0)
+            if ok: check()
+            else:
+                with self.assertRaises(ValueError): check()
+
+    def test_notebook_marker_ordering(self):
+        text = SOURCE
+        inc = text[text.index("assert_incremental_write_allowed(INCREMENTAL_WRITE_BLOCKERS)"):text.index("# Full rebuild (default).")]
+        full = text[text.index("# Full rebuild (default)."):]
+        for name, part in (("incremental", inc), ("full", full)):
+            with self.subTest(path=name):
+                order = [part.index(x) for x in ("withdraw_ledger_marker()", "write_quarantine_ledger(", "certify_ledger()")]
+                self.assertEqual(order, sorted(order))
+                self.assertEqual(part.count("certify_ledger()"), 1)
+        self.assertGreater(inc.index("certify_ledger()"), inc.index("replace_window(frame"))   # after all Silver
+        self.assertGreater(full.index("certify_ledger()"), full.index("saved.count()"))        # after read-back
+        self.assertEqual(text.count("certify_ledger()"), 3)   # def + the two call sites
 
 
 if __name__ == '__main__': unittest.main()

@@ -619,9 +619,23 @@ def cumulative_gate_counts(silver_hist, quarantine_hist, reviewed_hist, window_t
 
 
 def require_ledger_ready(table_properties):
-    """Incremental mode needs the complete ledger, which only a full run of this notebook creates."""
+    """Incremental mode needs a ledger certified COHERENT with Silver. The marker is withdrawn before the first
+    write of ANY run and restored only after ledger + all Silver outputs are written and verified, so an absent
+    marker means 'never built' or 'interrupted write': only a completed full rebuild reconciles it (fail closed)."""
     if table_properties.get(LEDGER_PROPERTY) != LEDGER_VERSION:
-        raise ValueError("quarantine ledger not initialised: run one full rebuild first; write blocked")
+        raise ValueError("quarantine ledger absent or not certified (incomplete write?): "
+                         "run a full rebuild to reconcile; incremental advancement blocked")
+
+
+def withdraw_ledger_marker():
+    """Called before the first write of every persistence sequence (full and incremental)."""
+    if spark.catalog.tableExists(QUARANTINE_TABLE):
+        spark.sql(f"ALTER TABLE {QUARANTINE_TABLE} UNSET TBLPROPERTIES IF EXISTS ('{LEDGER_PROPERTY}')")
+
+
+def certify_ledger():
+    """Called only after ledger and every Silver output were written AND read back successfully."""
+    spark.sql(f"ALTER TABLE {QUARANTINE_TABLE} SET TBLPROPERTIES ('{LEDGER_PROPERTY}' = '{LEDGER_VERSION}')")
 
 
 def historical_gate_counts(start):
@@ -646,8 +660,8 @@ def reviewed_keys_of(frame, limit):
 def write_quarantine_ledger(frame, expected_reviewed_keys, expected_rows, start=None):
     """Persist EVERY row with no service date (reviewed + unreviewed) before Silver.
     Reviewed rows keep their identity and are re-derived from the registry on read.
-    start=None: full overwrite, ledger marker withdrawn first and restored only after verification.
-    start=int: idempotent replaceWhere of [start, +inf) only."""
+    start=None: full overwrite. start=int: idempotent replaceWhere of [start, +inf) only.
+    Never certifies: the caller withdraws the marker first and certifies after ALL outputs are written."""
     expected_reviewed_keys = sorted(expected_reviewed_keys)
     if len(expected_reviewed_keys) != len(set(expected_reviewed_keys)):
         raise ValueError("duplicate quarantine identity; write blocked")
@@ -660,8 +674,6 @@ def write_quarantine_ledger(frame, expected_reviewed_keys, expected_rows, start=
         saved = spark.read.option("versionAsOf", version).table(QUARANTINE_TABLE).filter(
             F.col("feed_timestamp") >= F.lit(int(start)))
     else:
-        if spark.catalog.tableExists(QUARANTINE_TABLE):   # withdraw the marker: a failed full write must not look complete
-            spark.sql(f"ALTER TABLE {QUARANTINE_TABLE} UNSET TBLPROPERTIES IF EXISTS ('{LEDGER_PROPERTY}')")
         token = new_write_token("ledger-full")
         (frame.write.format("delta").mode("overwrite").option("overwriteSchema", "true")
             .option("userMetadata", token).saveAsTable(QUARANTINE_TABLE))
@@ -673,8 +685,6 @@ def write_quarantine_ledger(frame, expected_reviewed_keys, expected_rows, start=
             raise ValueError("quarantine read-back count mismatch; stop downstream")
     if reviewed_keys_of(saved, len(registered) + 1) != expected_reviewed_keys:
         raise ValueError("quarantine read-back identity mismatch; stop downstream")
-    if start is None:
-        spark.sql(f"ALTER TABLE {QUARANTINE_TABLE} SET TBLPROPERTIES ('{LEDGER_PROPERTY}' = '{LEDGER_VERSION}')")
     return version
 
 
@@ -981,14 +991,16 @@ if RUN_MODE != "full":
         raise RuntimeError("Incremental validation passed; write disabled until both write widgets are true")
     else:
         assert_incremental_write_allowed(INCREMENTAL_WRITE_BLOCKERS)   # raises before ANY write
+        withdraw_ledger_marker()   # fail closed: any crash below leaves the ledger uncertified
         # Ledger window FIRST (even when empty: stale invalids of the replaced window must be cleared).
         written_ledger_version = write_quarantine_ledger(quarantine_df, quarantine_keys, quarantine_count, SCOPE_START)
-        # Order matters: observations LAST so 07 never reads a half-run. A partial write is repaired by
-        # re-running the same window (min-watermark planner + idempotent replaceWhere).
+        # Order matters: observations LAST so 07 never reads a half-run. A partial write leaves the marker
+        # withdrawn, which blocks every later incremental run until a full rebuild reconciles the tables.
         written_versions = {name: replace_window(frame, "rome_transport.silver." + name, SCOPE_START,
                                                  expected_counts[name])
                             for name, frame in outputs.items()}
         written_versions["trip_updates_quarantine"] = written_ledger_version
+        certify_ledger()
         print({"source_versions": source_versions, "written_versions": written_versions,
                "window_start": SCOPE_START, "counts": expected_counts, "quality_status": "PASSED"})
     dbutils.notebook.exit(json.dumps({"run_mode": RUN_MODE, "status": "DONE"}))
@@ -997,6 +1009,7 @@ if RUN_MODE != "full":
 if not ALLOW_SILVER_OVERWRITE:
     raise RuntimeError("Silver validation passed; overwrite disabled until explicitly authorized")
 # Quarantine FIRST (full rebuild, idempotent); Silver observations stay LAST so 07 never sees a half-run.
+withdraw_ledger_marker()   # fail closed until every table below is written and verified
 written_versions = {"trip_updates_quarantine": write_quarantine_ledger(
     quarantine_df, quarantine_keys, quarantine_count)}
 for name, frame in outputs.items():
@@ -1008,5 +1021,6 @@ for name, frame in outputs.items():
     if saved.count() != expected_counts[name]:
         raise ValueError(f"{name}: read-back count mismatch; stop downstream")
     written_versions[name] = version
+certify_ledger()
 print({"source_versions": source_versions, "written_versions": written_versions,
        "counts": expected_counts, "quality_status": "PASSED"})
