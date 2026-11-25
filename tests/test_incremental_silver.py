@@ -4,6 +4,7 @@ Production definitions are extracted from the notebooks with ast. The causal-joi
 verbatim on synthetic frames. replaceWhere/Delta retention/RESTORE are NOT exercised here (no local Delta).
 """
 import ast
+import types
 import json
 import os
 import shutil
@@ -318,23 +319,32 @@ class IncrementalTests(unittest.TestCase):
 
 
 class SchemaGuardTest(unittest.TestCase):
-    """Pure schema comparison; needs no Spark session."""
+    """Pure schema comparison; needs neither Spark nor PySpark (minimal StructType stand-ins)."""
+
+    class _Type:
+        def __init__(self, name):
+            self.name = name
+
+        def simpleString(self):
+            return self.name
+
+    class _Schema:
+        def __init__(self, *cols):   # (name, type, nullable, metadata)
+            self.fields = [types.SimpleNamespace(name=n, dataType=SchemaGuardTest._Type(t), nullable=nu, metadata=m)
+                           for n, t, nu, m in cols]
 
     def test_schema_guard_ignores_only_metadata_and_nullability(self):
-        from pyspark.sql.types import LongType, StringType, StructField, StructType
         ok = extract(N07, {"F": None, "uuid": uuid})["schemas_compatible"]
-        base = StructType([StructField("a", LongType(), True), StructField("b", StringType(), True)])
-        commented = StructType([StructField("a", LongType(), True, {"comment": "x"}),
-                                StructField("b", StringType(), True, {"comment": "y"})])
-        non_null = StructType([StructField("a", LongType(), False), StructField("b", StringType(), False)])
-        self.assertNotEqual(base, commented)          # the former strict comparison would have blocked this
-        self.assertTrue(ok(base, commented))
-        self.assertTrue(ok(base, non_null))
-        self.assertFalse(ok(base, StructType(list(reversed(base.fields)))))                       # order
-        self.assertFalse(ok(base, StructType([base["a"], StructField("c", StringType(), True)])))  # name
-        self.assertFalse(ok(base, StructType([base["a"], StructField("b", LongType(), True)])))    # type
-        self.assertFalse(ok(base, StructType([base["a"]])))                                        # missing
-        self.assertFalse(ok(base, StructType(base.fields + [StructField("c", StringType(), True)])))  # extra
+        S = self._Schema
+        base = S(("a", "bigint", True, {}), ("b", "string", True, {}))
+        self.assertTrue(ok(base, S(("a", "bigint", True, {"comment": "x"}), ("b", "string", True, {"comment": "y"}))))
+        self.assertTrue(ok(base, S(("a", "bigint", False, {}), ("b", "string", False, {}))))
+        self.assertFalse(ok(base, S(("b", "string", True, {}), ("a", "bigint", True, {}))))            # order
+        self.assertFalse(ok(base, S(("a", "bigint", True, {}), ("c", "string", True, {}))))            # name
+        self.assertFalse(ok(base, S(("a", "bigint", True, {}), ("b", "bigint", True, {}))))            # type
+        self.assertFalse(ok(base, S(("a", "bigint", True, {}))))                                        # missing
+        self.assertFalse(ok(base, S(("a", "bigint", True, {}), ("b", "string", True, {}),
+                                    ("c", "string", True, {}))))                                        # extra
         self.assertIn("schemas_compatible(existing_output.schema, enriched_observations.schema)", N07)
         self.assertNotIn("existing_output.schema != enriched_observations.schema", N07)
 
