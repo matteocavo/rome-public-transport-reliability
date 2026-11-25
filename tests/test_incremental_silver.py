@@ -274,7 +274,7 @@ class IncrementalTests(unittest.TestCase):
     def test_incremental_write_blocked_while_prerequisites_unproven(self):
         allowed = self.n06["assert_incremental_write_allowed"]
         blockers = self.n06["INCREMENTAL_WRITE_BLOCKERS"]
-        self.assertTrue(any("global_invalid_gate" in b for b in blockers))
+        self.assertTrue(any("cumulative_gate_not_validated_on_databricks" in b for b in blockers))
         self.assertEqual(len(blockers), 1)   # replaceWhere and late-arrival checkpoint resolved with evidence
         with self.assertRaises(RuntimeError):
             allowed(blockers)
@@ -283,7 +283,7 @@ class IncrementalTests(unittest.TestCase):
             call = text.index("assert_incremental_write_allowed(INCREMENTAL_WRITE_BLOCKERS)")
             writes = [text.find(w, call) for w in ("write_quarantine_ledger(", "replace_window(")]
             self.assertGreater(min(i for i in writes if i >= 0), call)           # a write call follows the guard
-        self.assertIn("window_only_NOT_equivalent", N06)
+        self.assertIn("cumulative_gate_counts(*_hist", N06)   # gate is cumulative, not window-only
 
     def test_safety_margin_floor_is_fail_closed(self):
         for ns in (self.n06, self.n07):
