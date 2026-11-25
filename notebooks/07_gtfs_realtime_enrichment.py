@@ -13,6 +13,7 @@
 
 # COMMAND ----------
 
+import json
 from functools import reduce
 from pyspark.sql import functions as F
 from pyspark.sql.window import Window
@@ -168,6 +169,25 @@ def classify_shadow(differences, documented):
     return {"status": status, "unexplained": unexplained, "documented": explained}
 
 
+
+
+def shadow_exit_payload(verdict, differences, window_rows, plan, blockers):
+    """Structured, JSON-serialisable result of an incremental_shadow run (read via notebook_output.result)."""
+    from datetime import datetime, timezone
+    iso = lambda epoch: datetime.fromtimestamp(int(epoch), timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return {"run_mode": "incremental_shadow", "status": "DONE", "written": False,
+            "shadow_verdict": verdict["status"], "shadow_pass": verdict["status"] == "SHADOW_MATCH",
+            "unexplained": verdict["unexplained"], "documented": verdict["documented"],
+            "tables": {name: {"window_rows": {k: int(v) for k, v in window_rows.items()},
+                              "only_existing": int(diff["only_existing"]),
+                              "only_incremental": int(diff["only_incremental"])}
+                       for name, diff in differences.items()},
+            "window": {"start": int(plan["start"]), "start_utc": iso(plan["start"]),
+                       "watermark": int(plan["watermark"]), "watermark_utc": iso(plan["watermark"]),
+                       "source_max_feed": int(plan["source_max_feed"]),
+                       "source_max_feed_utc": iso(plan["source_max_feed"]),
+                       "window_seconds": int(plan["window_seconds"])},
+            "write_blockers": list(blockers)}
 def check_replace_window(frame, target_schema, start):
     """Delta replaceWhere preconditions: identical ordered schema and every row inside the predicate
     (a row outside, or with NULL feed_timestamp, would violate Delta's replaceWhere constraint check)."""
@@ -946,6 +966,13 @@ saved_output.orderBy(*OBS_KEY).select(
     "scheduled_arrival_datetime", "predicted_arrival_datetime", "arrival_delay_minutes",
     "current_status", "active_alert_flag", "alert_causes", "alert_effects",
 ).show(20, truncate=False)
+
+# Structured shadow result (fail-closed: SHADOW_FAILED already raised in the persist cell, so only MATCH or
+# DOCUMENTED_DIFFERENCES reach this point). Other modes keep the previous behaviour (no exit value).
+if RUN_MODE == "incremental_shadow":
+    dbutils.notebook.exit(json.dumps(shadow_exit_payload(
+        _verdict, _diff, {"recomputed": source_count, "existing": saved_summary.first()["total_rows"]},
+        INCREMENTAL_PLAN, INCREMENTAL_WRITE_BLOCKERS)))
 
 
 # COMMAND ----------
