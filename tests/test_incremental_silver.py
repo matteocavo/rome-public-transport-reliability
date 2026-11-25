@@ -29,7 +29,7 @@ FUNCS = {"resolve_run_mode", "parse_positive_int", "plan_incremental_window", "p
          "assert_epoch_column", "scope_from", "vehicle_epoch_expr", "count_late_arrivals",
          "count_vp_lookback_escapes", "lost_window_keys", "overlap_difference", "replace_window",
          "deduplicate_latest", "validate_service_date_quality", "classify_shadow", "shadow_exit_payload",
-         "assert_incremental_write_allowed", "check_replace_window", "assert_safety_margin",
+         "assert_incremental_write_allowed", "check_replace_window", "schemas_compatible", "assert_safety_margin",
          "find_write_version", "new_write_token", "tagged_write_version", "cumulative_gate_counts",
          "require_ledger_ready"}
 SHARED_EXTRA = {"INCREMENTAL_WRITE_BLOCKERS", "EXPECTED_SHADOW_DIFFERENCES"}
@@ -315,6 +315,28 @@ class IncrementalTests(unittest.TestCase):
         for text in (N06, N07):
             self.assertIn('read_widget("run_mode", "full")', text)
             self.assertIn('read_widget("allow_incremental_write", "false")', text)
+
+
+class SchemaGuardTest(unittest.TestCase):
+    """Pure schema comparison; needs no Spark session."""
+
+    def test_schema_guard_ignores_only_metadata_and_nullability(self):
+        from pyspark.sql.types import LongType, StringType, StructField, StructType
+        ok = extract(N07, {"F": None, "uuid": uuid})["schemas_compatible"]
+        base = StructType([StructField("a", LongType(), True), StructField("b", StringType(), True)])
+        commented = StructType([StructField("a", LongType(), True, {"comment": "x"}),
+                                StructField("b", StringType(), True, {"comment": "y"})])
+        non_null = StructType([StructField("a", LongType(), False), StructField("b", StringType(), False)])
+        self.assertNotEqual(base, commented)          # the former strict comparison would have blocked this
+        self.assertTrue(ok(base, commented))
+        self.assertTrue(ok(base, non_null))
+        self.assertFalse(ok(base, StructType(list(reversed(base.fields)))))                       # order
+        self.assertFalse(ok(base, StructType([base["a"], StructField("c", StringType(), True)])))  # name
+        self.assertFalse(ok(base, StructType([base["a"], StructField("b", LongType(), True)])))    # type
+        self.assertFalse(ok(base, StructType([base["a"]])))                                        # missing
+        self.assertFalse(ok(base, StructType(base.fields + [StructField("c", StringType(), True)])))  # extra
+        self.assertIn("schemas_compatible(existing_output.schema, enriched_observations.schema)", N07)
+        self.assertNotIn("existing_output.schema != enriched_observations.schema", N07)
 
 
 class ShadowExitPayloadTest(unittest.TestCase):
