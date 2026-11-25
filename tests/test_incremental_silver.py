@@ -341,5 +341,38 @@ class ShadowExitPayloadTest(unittest.TestCase):
         # the shadow exit uses the structured payload, not the bare DONE status
         self.assertIn('shadow_exit_payload(verdict, differences, expected_counts, INCREMENTAL_PLAN, gate_counts)', N06)
 
+    def test_07_shadow_exit_payload_is_structured_and_fail_closed(self):
+        NS = extract(N07, {"F": globals().get("F"), "uuid": uuid})
+        build, classify = NS["shadow_exit_payload"], NS["classify_shadow"]
+        blockers = NS["INCREMENTAL_WRITE_BLOCKERS"]
+        plan = {"start": 1795606181, "watermark": 1795609781, "source_max_feed": 1795609781, "window_seconds": 3600}
+        rows = {"recomputed": 12, "existing": 12}
+        name = "realtime_trip_stop_observations_enriched"
+        clean = {name: {"only_existing": 0, "only_incremental": 0}}
+        out = build(classify(clean, {}), clean, rows, plan, blockers)
+        self.assertEqual(json.loads(json.dumps(out)), out)
+        self.assertEqual((out["shadow_verdict"], out["shadow_pass"], out["written"]), ("SHADOW_MATCH", True, False))
+        self.assertEqual(out["tables"][name], {"window_rows": rows, "only_existing": 0, "only_incremental": 0})
+        self.assertEqual(out["window"]["start_utc"], "2026-11-25T11:29:41Z")
+        self.assertEqual(out["window"]["watermark_utc"], "2026-11-25T12:29:41Z")
+        self.assertEqual(out["window"]["source_max_feed_utc"], "2026-11-25T12:29:41Z")
+        self.assertEqual(out["write_blockers"], list(blockers))
+        self.assertTrue(out["write_blockers"])
+        diff = {name: {"only_existing": 1, "only_incremental": 0}}
+        doc = build(classify(diff, {name: {"only_existing": 1, "only_incremental": 0, "reason": "r"}}),
+                    diff, rows, plan, blockers)
+        self.assertEqual((doc["shadow_verdict"], doc["shadow_pass"]), ("SHADOW_DOCUMENTED_DIFFERENCES", False))
+        failed = build(classify(diff, {}), diff, rows, plan, blockers)
+        self.assertEqual((failed["shadow_verdict"], failed["shadow_pass"]), ("SHADOW_FAILED", False))
+
+    def test_07_shadow_exit_is_shadow_only_and_after_the_fail_closed_raise(self):
+        raise_at = N07.index('raise ValueError("incremental_shadow FAIL')
+        exit_at = N07.index("dbutils.notebook.exit(json.dumps(shadow_exit_payload(")
+        self.assertLess(raise_at, exit_at)
+        self.assertEqual(N07.count("dbutils.notebook.exit("), 1)
+        self.assertRegex(N07, r'if RUN_MODE == "incremental_shadow":\s+dbutils\.notebook\.exit')
+        self.assertIn("_verdict, _diff,", N07)
+        self.assertIn("assert_incremental_write_allowed(INCREMENTAL_WRITE_BLOCKERS)", N07)
+
 if __name__ == "__main__":
     unittest.main()
