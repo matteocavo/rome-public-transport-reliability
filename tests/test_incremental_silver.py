@@ -4,6 +4,7 @@ Production definitions are extracted from the notebooks with ast. The causal-joi
 verbatim on synthetic frames. replaceWhere/Delta retention/RESTORE are NOT exercised here (no local Delta).
 """
 import ast
+import json
 import os
 import shutil
 import sys
@@ -27,7 +28,7 @@ SHARED = {"RUN_MODES", "VP_MAX_STALENESS_SECONDS", "MAX_INVALID_SERVICE_DATE_RAT
 FUNCS = {"resolve_run_mode", "parse_positive_int", "plan_incremental_window", "plan_enrichment_window",
          "assert_epoch_column", "scope_from", "vehicle_epoch_expr", "count_late_arrivals",
          "count_vp_lookback_escapes", "lost_window_keys", "overlap_difference", "replace_window",
-         "deduplicate_latest", "validate_service_date_quality", "classify_shadow",
+         "deduplicate_latest", "validate_service_date_quality", "classify_shadow", "shadow_exit_payload",
          "assert_incremental_write_allowed", "check_replace_window", "assert_safety_margin",
          "find_write_version", "new_write_token", "tagged_write_version", "cumulative_gate_counts",
          "require_ledger_ready"}
@@ -315,6 +316,30 @@ class IncrementalTests(unittest.TestCase):
             self.assertIn('read_widget("run_mode", "full")', text)
             self.assertIn('read_widget("allow_incremental_write", "false")', text)
 
+
+class ShadowExitPayloadTest(unittest.TestCase):
+    """Pure-Python: no Spark needed."""
+
+    def test_shadow_exit_payload_exposes_verdict_and_only_match_passes(self):
+        NS = extract(N06, {"F": globals().get("F"), "uuid": uuid})
+        build, classify = NS["shadow_exit_payload"], NS["classify_shadow"]
+        plan = {"start": 1795606181, "watermark": 1795609781, "source_max_feed": 1795613345, "window_seconds": 7164}
+        gate = {"total": 97208375, "invalid": 2}
+        rows = {"t": 10}
+        clean = {"t": {"only_existing": 0, "only_incremental": 0}}
+        out = build(classify(clean, {}), clean, rows, plan, gate)
+        json.dumps(out)
+        self.assertEqual((out["shadow_verdict"], out["shadow_pass"], out["written"]), ("SHADOW_MATCH", True, False))
+        self.assertEqual(out["tables"]["t"], {"window_rows": 10, "only_existing": 0, "only_incremental": 0})
+        self.assertEqual(out["window"]["start_utc"], "2026-11-25T11:29:41Z")
+        self.assertEqual(out["window"]["watermark_utc"], "2026-11-25T12:29:41Z")
+        self.assertEqual(out["window"]["source_max_feed_utc"], "2026-11-25T13:29:05Z")
+        self.assertEqual(out["cumulative_gate"], gate)
+        diff = {"t": {"only_existing": 1, "only_incremental": 0}}
+        doc = build(classify(diff, {"t": {"only_existing": 1, "only_incremental": 0, "reason": "r"}}), diff, rows, plan, gate)
+        self.assertEqual((doc["shadow_verdict"], doc["shadow_pass"]), ("SHADOW_DOCUMENTED_DIFFERENCES", False))
+        # the shadow exit uses the structured payload, not the bare DONE status
+        self.assertIn('shadow_exit_payload(verdict, differences, expected_counts, INCREMENTAL_PLAN, gate_counts)', N06)
 
 if __name__ == "__main__":
     unittest.main()
