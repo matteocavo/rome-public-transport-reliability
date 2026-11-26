@@ -273,19 +273,32 @@ class IncrementalTests(unittest.TestCase):
         self.assertIn('raise ValueError("incremental_shadow FAIL', N06)
         self.assertIn('raise ValueError("incremental_shadow FAIL', N07)
 
-    def test_incremental_write_blocked_while_prerequisites_unproven(self):
+    def test_incremental_write_guards_after_blockers_removed(self):
         allowed = self.n06["assert_incremental_write_allowed"]
-        blockers = self.n06["INCREMENTAL_WRITE_BLOCKERS"]
-        self.assertTrue(any("cumulative_gate_not_validated_on_databricks" in b for b in blockers))
-        self.assertEqual(len(blockers), 1)   # replaceWhere and late-arrival checkpoint resolved with evidence
-        with self.assertRaises(RuntimeError):
-            allowed(blockers)
-        allowed(())   # only an explicit reviewed removal of every blocker opens the gate
-        for text in (N06, N07):   # the blocker check precedes the first write call
+        for ns in (self.n06, self.n07):   # satisfied blockers removed (06 cumulative gate, 07 upstream gate)
+            self.assertEqual(tuple(ns["INCREMENTAL_WRITE_BLOCKERS"]), ())
+        allowed(())
+        with self.assertRaises(RuntimeError):   # the guard itself still fails closed on any future blocker
+            allowed(("future_blocker",))
+        for text in (N06, N07):   # the guard still precedes the first write call
             call = text.index("assert_incremental_write_allowed(INCREMENTAL_WRITE_BLOCKERS)")
             writes = [text.find(w, call) for w in ("write_quarantine_ledger(", "replace_window(")]
-            self.assertGreater(min(i for i in writes if i >= 0), call)           # a write call follows the guard
+            self.assertGreater(min(i for i in writes if i >= 0), call)
+        # safe defaults: full rebuild, incremental write opt-in, overwrite flags still required
+        for text in (N06, N07):
+            self.assertIn('read_widget("run_mode", "full")', text)
+            self.assertIn('read_widget("allow_incremental_write", "false")', text)
+        self.assertIn("ALLOW_SILVER_OVERWRITE and ALLOW_INCREMENTAL_WRITE", N06)
+        self.assertIn("ALLOW_ENRICHMENT_OVERWRITE and ALLOW_INCREMENTAL_WRITE", N07)
+        self.assertIn("require_ledger_ready", N06)
         self.assertIn("cumulative_gate_counts(*_hist", N06)   # gate is cumulative, not window-only
+
+    def test_07_refuses_source_behind_enriched_table(self):
+        plan = self.n07["plan_enrichment_window"]   # 06 -> 07 order: 07 cannot run ahead of the 06 Silver output
+        with self.assertRaises(ValueError):
+            plan(1795609781, 1795606181, 3600, 86400)
+        with self.assertRaises(ValueError):
+            plan(None, 1795606181, 3600, 86400)
 
     def test_safety_margin_floor_is_fail_closed(self):
         for ns in (self.n06, self.n07):
@@ -418,7 +431,7 @@ class ShadowExitPayloadTest(unittest.TestCase):
         self.assertEqual(out["window"]["watermark_utc"], "2026-11-25T12:29:41Z")
         self.assertEqual(out["window"]["source_max_feed_utc"], "2026-11-25T12:29:41Z")
         self.assertEqual(out["write_blockers"], list(blockers))
-        self.assertTrue(out["write_blockers"])
+        self.assertEqual(out["write_blockers"], [])
         diff = {name: {"only_existing": 1, "only_incremental": 0}}
         doc = build(classify(diff, {name: {"only_existing": 1, "only_incremental": 0, "reason": "r"}}),
                     diff, rows, plan, blockers)

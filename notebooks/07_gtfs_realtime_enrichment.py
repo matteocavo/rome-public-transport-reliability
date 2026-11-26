@@ -136,10 +136,11 @@ def overlap_difference(existing, new, upto):
 
 # Incremental WRITES stay disabled until every blocker below is proven on Databricks and removed in a reviewed change.
 INCREMENTAL_WRITE_BLOCKERS = (
-    "upstream_silver_gate: 06 incremental writes are themselves blocked (cumulative invalid gate not provable).",
-    # Resolved with Databricks evidence (2026-11-24), no longer blockers: delta_replacewhere (isolated Delta table: out-of-window
-    # rows, schema mismatch and reruns behave as required) and late_arrival_checkpoint (lag 1..901 s vs 3600 s margin +
-    # fail-closed count_late_arrivals). Efficiency of replaceWhere on the unpartitioned Silver tables is still unmeasured.
+    # Empty: upstream_silver_gate was removed once the 06 cumulative gate was verified on real data. Activation order
+    # is 06 -> 07: 07 reads the 06 output, plan_enrichment_window refuses a source behind the enriched table, and
+    # the window must reach source_max_feed. Writing still needs run_mode=incremental AND ALLOW_INCREMENTAL_WRITE
+    # AND ALLOW_ENRICHMENT_OVERWRITE (defaults: full / false). replaceWhere efficiency is still unmeasured
+    # (rollout criterion, not a code blocker).
 )
 # Documented, reviewed shadow differences: {table: {"only_existing": n, "only_incremental": n, "reason": str}}.
 # Empty by default: any overlap difference is a FAIL until explicitly reviewed and recorded here.
