@@ -167,13 +167,12 @@ def overlap_difference(existing, new, upto):
 
 # Incremental WRITES stay disabled until every blocker below is proven on Databricks and removed in a reviewed change.
 INCREMENTAL_WRITE_BLOCKERS = (
-    "cumulative_gate_not_validated_on_databricks: the 0.1% gate is now reconstructed from the quarantine ledger "
-    "(unit-tested equivalent to the full gate) but has never run on production tables. Remove this blocker only in "
-    "a reviewed change after (1) one full run has created the ledger and (2) an incremental_shadow run on the real "
-    "tables reports SHADOW_MATCH and a cumulative gate equal to the full-run gate.",
-    # Resolved with Databricks evidence (2026-11-24), no longer blockers: delta_replacewhere (isolated Delta table: out-of-window
-    # rows, schema mismatch and reruns behave as required) and late_arrival_checkpoint (lag 1..901 s vs 3600 s margin +
-    # fail-closed count_late_arrivals). Efficiency of replaceWhere on the unpartitioned Silver tables is still unmeasured.
+    # Empty: the logical blockers are satisfied. cumulative_gate_not_validated_on_databricks was removed after the
+    # incremental_shadow run reported SHADOW_MATCH and the cumulative gate rebuilt from the ledger v1 matched the
+    # full-run gate on the real tables (97,256,743 rows, 2 invalid, 32 reviewed). Earlier resolved: delta_replacewhere
+    # and late_arrival_checkpoint (2026-11-24). Writing still needs run_mode=incremental AND ALLOW_INCREMENTAL_WRITE
+    # AND the overwrite flag (defaults: full / false), plus require_ledger_ready. replaceWhere efficiency on the
+    # unpartitioned Silver tables is still unmeasured: it is a rollout criterion, not a code blocker.
 )
 # Documented, reviewed shadow differences: {table: {"only_existing": n, "only_incremental": n, "reason": str}}.
 # Empty by default: any overlap difference is a FAIL until explicitly reviewed and recorded here.
