@@ -112,12 +112,16 @@ def plan_enrichment_window(output_max_feed, source_max_feed, safety_seconds, max
             "window_seconds": source_max_feed - start}
 
 
+def assert_epoch_column(frame, column="feed_timestamp"):
+    if frame.schema[column].dataType.simpleString() not in ("bigint", "int"):
+        raise ValueError(f"{column} is not an integral epoch; incremental disabled")
+
+
 def scope_from(frame, start, column="feed_timestamp"):
     """Row filter on the (immutable per snapshot) epoch; no-op for the full rebuild."""
     if start is None:
         return frame
-    if frame.schema[column].dataType.simpleString() not in ("bigint", "int"):
-        raise ValueError(f"{column} is not an integral epoch; incremental disabled")
+    assert_epoch_column(frame, column)
     return frame.filter(F.col(column) >= F.lit(int(start)))
 
 
