@@ -1,0 +1,134 @@
+{
+  "description": "Refresh downstream separato da ingestion 05. Solo 06 -> 07 -> input scoring 08 -> Gold operativo 13. Nessun training o model scoring. Modalita ibrida: preflight 06a sceglie full o incremental per 06 e 07. Template PAUSED, cadenza periodica ogni 3 ore; l attivazione richiede autorizzazione esplicita separata.",
+  "email_notifications": {},
+  "format": "MULTI_TASK",
+  "max_concurrent_runs": 1,
+  "name": "06_13_downstream_operational_refresh",
+  "queue": {
+    "enabled": true
+  },
+  "tags": {
+    "model_training": "disabled",
+    "purpose": "downstream_freshness"
+  },
+  "tasks": [
+    {
+      "task_key": "preflight_mode",
+      "disabled": false,
+      "email_notifications": {},
+      "run_if": "ALL_SUCCESS",
+      "timeout_seconds": 300,
+      "notebook_task": {
+        "notebook_path": "{{NOTEBOOK_ROOT}}/06a_downstream_mode_preflight",
+        "source": "WORKSPACE",
+        "base_parameters": {
+          "preflight_margin_seconds": "1800"
+        }
+      }
+    },
+    {
+      "disabled": false,
+      "email_notifications": {},
+      "notebook_task": {
+        "base_parameters": {
+          "allow_silver_overwrite": "true",
+          "run_mode": "{{tasks.preflight_mode.values.run_mode}}",
+          "allow_incremental_write": "true"
+        },
+        "notebook_path": "{{NOTEBOOK_ROOT}}/06_gtfs_realtime_silver",
+        "source": "WORKSPACE"
+      },
+      "run_if": "ALL_SUCCESS",
+      "task_key": "silver_06",
+      "timeout_seconds": 3000,
+      "depends_on": [
+        {
+          "task_key": "preflight_mode"
+        }
+      ]
+    },
+    {
+      "depends_on": [
+        {
+          "task_key": "silver_06"
+        }
+      ],
+      "disabled": false,
+      "email_notifications": {},
+      "notebook_task": {
+        "base_parameters": {
+          "allow_enrichment_overwrite": "true",
+          "allow_invalid_alert_snapshot_isolation": "true",
+          "run_mode": "{{tasks.preflight_mode.values.run_mode}}",
+          "allow_incremental_write": "true"
+        },
+        "notebook_path": "{{NOTEBOOK_ROOT}}/07_gtfs_realtime_enrichment",
+        "source": "WORKSPACE"
+      },
+      "run_if": "ALL_SUCCESS",
+      "task_key": "enrichment_07",
+      "timeout_seconds": 1680
+    },
+    {
+      "depends_on": [
+        {
+          "task_key": "enrichment_07"
+        }
+      ],
+      "disabled": false,
+      "email_notifications": {},
+      "notebook_task": {
+        "base_parameters": {
+          "allow_staging_overwrite": "true"
+        },
+        "notebook_path": "{{NOTEBOOK_ROOT}}/08_current_scoring_dataset",
+        "source": "WORKSPACE"
+      },
+      "run_if": "ALL_SUCCESS",
+      "task_key": "scoring_input_08",
+      "timeout_seconds": 720
+    },
+    {
+      "depends_on": [
+        {
+          "task_key": "scoring_input_08"
+        }
+      ],
+      "disabled": false,
+      "email_notifications": {},
+      "notebook_task": {
+        "base_parameters": {
+          "allow_gold_overwrite": "true"
+        },
+        "notebook_path": "{{NOTEBOOK_ROOT}}/13_gold_analytics",
+        "source": "WORKSPACE"
+      },
+      "run_if": "ALL_SUCCESS",
+      "task_key": "operational_gold_13",
+      "timeout_seconds": 780
+    }
+  ],
+  "timeout_seconds": 0,
+  "trigger": {
+    "pause_status": "PAUSED",
+    "periodic": {
+      "interval": 3,
+      "unit": "HOURS"
+    }
+  },
+  "webhook_notifications": {},
+  "parameters": [
+    {
+      "name": "incremental_enabled",
+      "default": "true"
+    },
+    {
+      "name": "safety_window_seconds",
+      "default": "3600"
+    },
+    {
+      "name": "max_window_seconds",
+      "default": "21600"
+    }
+  ]
+}
