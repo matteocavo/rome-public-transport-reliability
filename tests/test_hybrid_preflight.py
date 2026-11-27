@@ -14,7 +14,8 @@ JOB_PATH = ROOT / "jobs/downstream_hybrid_refresh.json"
 COPIED = ("OBSERVED_MAX_INGESTION_LAG_SECONDS", "parse_positive_int", "assert_safety_margin",
           "plan_incremental_window", "plan_enrichment_window")
 LOCAL = ("RUN_MODE_FULL", "RUN_MODE_INCREMENTAL", "UNBOUNDED_WINDOW_SECONDS", "parse_bool",
-         "parse_non_negative_int", "decide_run_mode")
+         "parse_non_negative_int", "decide_run_mode", "MIN_VALID_EPOCH", "FUTURE_TOLERANCE_SECONDS",
+         "validate_watermarks")
 
 
 def _nodes(source):
@@ -44,8 +45,8 @@ NOW = 1_800_000_000
 H = 3600
 
 
-def run(sil_tu, sil_obs, bronze, enriched, safety=3600, maxw=21600, margin=1800, enabled="true"):
-    return decide(enabled, sil_tu, sil_obs, bronze, enriched, safety, maxw, margin)
+def run(sil_tu, sil_obs, bronze, enriched, safety=3600, maxw=21600, margin=1800, enabled="true", now=NOW):
+    return decide(enabled, sil_tu, sil_obs, bronze, enriched, safety, maxw, margin, now)
 
 
 class CopyIdentity(unittest.TestCase):
@@ -77,7 +78,9 @@ class Equivalence(unittest.TestCase):
             except ValueError:
                 got = "anomaly"
             if expected == "incremental":
-                self.assertEqual(got, "incremental")
+                # the preflight is stricter (explicit ordering): it may raise, but never returns full here
+                stricter = br < max(tu, ob) or en > ob
+                self.assertEqual(got, "anomaly" if stricter else "incremental")
             else:
                 # real planners reject: preflight must return full (over-limit) or raise (anomaly); never incremental
                 self.assertNotEqual(got, "incremental")
@@ -105,7 +108,7 @@ class Scenarios(unittest.TestCase):
         self.assertEqual(run(wm, wm, NOW, wm, margin=1800)["run_mode"], "full")
 
     def test_window_uses_min_watermark_and_enriched(self):
-        r = run(NOW - 100, NOW - 9 * H, NOW, NOW - 100)
+        r = run(NOW - 100, NOW - 9 * H, NOW, NOW - 9 * H)
         self.assertEqual(r["run_mode"], "full")
         r = run(NOW - 100, NOW - 100, NOW, NOW - 9 * H)
         self.assertEqual(r["run_mode"], "full")
@@ -120,6 +123,31 @@ class Scenarios(unittest.TestCase):
 
 
 class FailClosed(unittest.TestCase):
+    def test_ordering_counterexamples(self):
+        with self.assertRaises(ValueError):   # Enriched ahead of current Silver observations
+            run(NOW - 600, NOW - 600, NOW, NOW - 300)
+        with self.assertRaises(ValueError):   # Bronze behind the most recent Silver
+            run(NOW - 600, NOW - 100, NOW - 300, NOW - 600)
+        with self.assertRaises(ValueError):
+            run(NOW - 100, NOW - 600, NOW - 300, NOW - 600)
+
+    def test_epoch_validity_and_future_bounds(self):
+        for bad in (-1, 0, 1_577_836_799):
+            with self.assertRaises(ValueError, msg=str(bad)):
+                run(bad, bad, bad, bad)
+        future = NOW + 301
+        with self.assertRaises(ValueError):
+            run(future, future, future, future, now=NOW)
+        with self.assertRaises(ValueError):
+            run(future + 10 * H, future + 10 * H, future + 10 * H, future + 10 * H)
+        ok = NOW + 300   # exactly at tolerance
+        self.assertEqual(run(ok, ok, ok, ok)["run_mode"], "incremental")
+        lo = 1_577_836_800
+        self.assertEqual(run(lo, lo, lo, lo, now=lo)["run_mode"], "incremental")
+        for bad in (1.5, True, "x"):
+            with self.assertRaises((ValueError, TypeError)):
+                run(NOW, NOW, NOW, bad)
+
     def test_inconsistent_or_missing_data_raises(self):
         for args in [(None, NOW, NOW, NOW), (NOW, None, NOW, NOW), (NOW, NOW, None, NOW), (NOW, NOW, NOW, None),
                      (NOW, NOW, NOW - 1000, NOW),   # Bronze behind Silver
@@ -193,6 +221,12 @@ class JobConfig(unittest.TestCase):
         self.assertEqual(self.tasks["silver_06"]["timeout_seconds"], 3000)
         self.assertEqual(self.job["max_concurrent_runs"], 1)
         self.assertTrue(self.job["queue"]["enabled"])
+
+    def test_template_is_paused_and_consistent(self):
+        self.assertEqual(self.job["trigger"]["pause_status"], "PAUSED")
+        self.assertEqual(self.job["trigger"]["periodic"], {"interval": 3, "unit": "HOURS"})
+        self.assertIn("PAUSED", self.job["description"])
+        self.assertNotIn("2 ore", self.job["description"])
 
     def test_paths_are_placeholders_not_personal(self):
         self.assertNotIn("@", self.raw)

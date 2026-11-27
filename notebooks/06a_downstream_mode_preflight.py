@@ -12,6 +12,8 @@
 
 # COMMAND ----------
 
+import time
+
 from pyspark.sql import functions as F
 
 # COMMAND ----------
@@ -83,6 +85,21 @@ def plan_enrichment_window(output_max_feed, source_max_feed, safety_seconds, max
 RUN_MODE_FULL = "full"
 RUN_MODE_INCREMENTAL = "incremental"
 UNBOUNDED_WINDOW_SECONDS = 10 ** 12   # only used to obtain the window length from the verbatim planners
+MIN_VALID_EPOCH = 1_577_836_800        # 2020-01-01T00:00:00Z: earlier epochs (e.g. -1, 0) are invalid
+FUTURE_TOLERANCE_SECONDS = 300         # explicit clock-skew tolerance against the single UTC instant `now_epoch`
+
+
+def validate_watermarks(now_epoch, named_values):
+    """Every watermark must be a non-null epoch in [MIN_VALID_EPOCH, now_epoch + FUTURE_TOLERANCE_SECONDS]."""
+    for name, value in named_values.items():
+        if value is None:
+            raise ValueError(f"{name} watermark is empty")
+        if isinstance(value, bool) or int(value) != value:
+            raise ValueError(f"{name} watermark is not an integer epoch")
+        if int(value) < MIN_VALID_EPOCH:
+            raise ValueError(f"{name} watermark {value} is not a valid epoch")
+        if int(value) > now_epoch + FUTURE_TOLERANCE_SECONDS:
+            raise ValueError(f"{name} watermark {value} is in the future")
 
 
 def parse_bool(value, name):
@@ -103,7 +120,7 @@ def parse_non_negative_int(value, name):
 
 
 def decide_run_mode(incremental_enabled, silver_trip_updates_max, silver_observations_max, bronze_trip_updates_max,
-                    enriched_max, safety_seconds, max_window_seconds, margin_seconds):
+                    enriched_max, safety_seconds, max_window_seconds, margin_seconds, now_epoch):
     """Pure decision. Returns a dict; raises ValueError on any invalid or inconsistent input (fail-closed)."""
     enabled = parse_bool(incremental_enabled, "incremental_enabled")
     safety = assert_safety_margin(safety_seconds)
@@ -112,6 +129,16 @@ def decide_run_mode(incremental_enabled, silver_trip_updates_max, silver_observa
     if margin >= max_window:
         raise ValueError("preflight_margin_seconds must be smaller than max_window_seconds")
     threshold = max_window - margin
+    validate_watermarks(int(now_epoch), {"silver.trip_updates": silver_trip_updates_max,
+                                         "silver.realtime_trip_stop_observations": silver_observations_max,
+                                         "bronze.trip_updates": bronze_trip_updates_max,
+                                         "silver.realtime_enriched_observations": enriched_max})
+    # Explicit ordering, BEFORE the planners (which only look at the oldest Silver watermark):
+    # Bronze >= every Silver output, and Enriched <= current Silver observations.
+    if bronze_trip_updates_max < max(silver_trip_updates_max, silver_observations_max):
+        raise ValueError("Bronze is behind a Silver output; inconsistent state")
+    if enriched_max > silver_observations_max:
+        raise ValueError("Enriched is ahead of Silver observations; inconsistent state")
     # Inputs are always validated, also when incremental is disabled, so that the logged state is trustworthy.
     plan_06 = plan_incremental_window(
         {"trip_updates": silver_trip_updates_max, "realtime_trip_stop_observations": silver_observations_max},
@@ -147,7 +174,8 @@ DECISION = decide_run_mode(
     read_epoch_max("rome_transport.silver.realtime_enriched_observations"),
     dbutils.widgets.get("safety_window_seconds"),
     dbutils.widgets.get("max_window_seconds"),
-    dbutils.widgets.get("preflight_margin_seconds"))
+    dbutils.widgets.get("preflight_margin_seconds"),
+    int(time.time()))
 print({"preflight": DECISION})
 for _key in ("run_mode", "reason", "window_06_seconds", "window_07_seconds"):
     dbutils.jobs.taskValues.set(key=_key, value=DECISION[_key])

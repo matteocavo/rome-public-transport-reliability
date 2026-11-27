@@ -1,5 +1,5 @@
 {
-  "description": "Refresh downstream separato da ingestion 05. Solo 06 -> 07 -> input scoring 08 -> Gold operativo 13. Nessun training o model scoring. PAUSED; proposta ogni 2 ore da benchmark di circa 45 minuti. Quote Free e sostenibilita da verificare prima dell attivazione.",
+  "description": "Refresh downstream separato da ingestion 05. Solo 06 -> 07 -> input scoring 08 -> Gold operativo 13. Nessun training o model scoring. Modalita ibrida: preflight 06a sceglie full o incremental per 06 e 07. Template PAUSED, cadenza periodica ogni 3 ore; l attivazione richiede autorizzazione esplicita separata.",
   "email_notifications": {},
   "format": "MULTI_TASK",
   "max_concurrent_runs": 1,
@@ -110,7 +110,7 @@
   ],
   "timeout_seconds": 0,
   "trigger": {
-    "pause_status": "UNPAUSED",
+    "pause_status": "PAUSED",
     "periodic": {
       "interval": 3,
       "unit": "HOURS"
