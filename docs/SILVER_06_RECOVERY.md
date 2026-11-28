@@ -196,6 +196,9 @@ history terms are 0 so the gate equals the original one. Pinned by
 `test_original_gate_semantics_pinned`. The 17 real-Spark tests are skipped
 locally (no JVM) and remain UNVERIFIED: no end-to-end equivalence is claimed.
 
-Incremental production writes remain blocked (`INCREMENTAL_WRITE_BLOCKERS`);
-`run_mode` defaults to `full`. In the hybrid production Job the preflight task supplies `run_mode` and
-`allow_incremental_write=true` (see `DOWNSTREAM_RUNTIME_ROLLOUT.md`).
+Incremental writes are disabled by default: `run_mode` defaults to `full` and `allow_incremental_write`
+to `false`, so without explicit authorization the notebook never writes incrementally. The logical
+blockers (`INCREMENTAL_WRITE_BLOCKERS`) are now empty. In the hybrid production Job the preflight task
+supplies `run_mode=incremental` (or `full`) and `allow_incremental_write=true`; the fail-closed checks
+(overwrite flag, ledger readiness, cumulative gate, consistency assertions that raise before any write)
+remain in force. See `DOWNSTREAM_RUNTIME_ROLLOUT.md`.

@@ -306,6 +306,8 @@ Lag della release manuale: Bronze snapshot a fine run -> Silver 2752s; Silver ->
 | 562684959567565 | 28/11 06:31 | full (automatico, dopo la pausa notturna) | SUCCESS | 99.863.753 | 1795847371 | 262 |
 | 363437381058558 | 28/11 09:31 | incremental | SUCCESS | 100.053.604 | 1795858177 | 263 |
 
+Fonte: verifiche operative di sola lettura del 27–28 novembre 2026 (CLI Databricks, cronologia Delta e query SQL sulle tabelle); nessun report separato è versionato nel repository e non sono state eseguite verifiche indipendenti ulteriori.
+
 Controlli, ripetuti su ogni run: SUCCESS senza retry; modalità attesa; Silver ed Enriched allineati (time travel); 0 duplicati sulla chiave `feed_timestamp, entity_id, trip_id, stop_sequence, stop_id`; ledger `v1` con 34 righe in quarantena entro il gate; Gold PASS e coerente con Enriched. Nessuna anomalia concreta di durata o storage. La propagazione di `run_mode` è stata provata con il test isolato (run 1099108411391010) e in produzione.
 
 ### Osservazioni non bloccanti
