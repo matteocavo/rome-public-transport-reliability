@@ -197,4 +197,5 @@ history terms are 0 so the gate equals the original one. Pinned by
 locally (no JVM) and remain UNVERIFIED: no end-to-end equivalence is claimed.
 
 Incremental production writes remain blocked (`INCREMENTAL_WRITE_BLOCKERS`);
-`run_mode` defaults to `full`.
+`run_mode` defaults to `full`. In the hybrid production Job the preflight task supplies `run_mode` and
+`allow_incremental_write=true` (see `DOWNSTREAM_RUNTIME_ROLLOUT.md`).

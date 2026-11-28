@@ -283,3 +283,38 @@ La validazione manuale usa Delta time travel al completamento (`2026-10-26T11:55
 | 113160267318301 | operational_gold_13 | 2026-10-26T12:35:06.381000+00:00 | 2026-10-26T12:43:38.295000+00:00 | 511.914 | non esposta |
 
 Lag della release manuale: Bronze snapshot a fine run -> Silver 2752s; Silver -> enrichment 0s; enrichment -> scoring 0s; preparazione scoring -> Gold 1022.068s. Il lag Bronze della verifica PERIODIC usa Bronze corrente al controllo, non il suo timestamp di fine run.
+
+## Modalità ibrida incremental/full (27–28 novembre 2026)
+
+**Stato:** implementazione e validazione iniziale completate; esito **GO**. Il Job `1084265487272426` (`06_13_downstream_operational_refresh`) opera in modalità ibrida; resta il monitoraggio ordinario. La sezione precedente documenta il rollout del 26 ottobre (06 sempre full, trigger ogni 2 ore) e non è riscritta.
+
+### Funzionamento
+
+- Trigger UNPAUSED ogni **3 ore al minuto :31 UTC**; `max_concurrent_runs=1`, coda abilitata, nessun retry automatico del Job.
+- Catena: `preflight_mode` (06a) → `silver_06` → `enrichment_07` → `scoring_input_08` → `operational_gold_13`. 06 e 07 ricevono `run_mode` dal preflight e `allow_incremental_write=true`.
+- Parametri: `incremental_enabled=true`, `safety_window_seconds=3600`, `max_window_seconds=21600`; margine del preflight 1800 s; timeout dei task: preflight 300 s, 06 3000 s, 07 1680 s, 08 720 s, 13 780 s.
+- Regola: **incremental** se entrambe le finestre sono ≤ `max_window − margine` (19800 s), altrimenti **full**. Ne risulta il ciclo automatico `incremental → full → incremental` dopo una pausa prolungata (ad esempio notturna). `incremental_enabled=false` forza full.
+- **Fail-closed:** anomalie del preflight o incoerenze dei gate sollevano un errore, senza fallback silenzioso e senza scritture. La proprietà di tabella `rmi.quarantine_ledger=v1` è ritirata prima della prima scrittura di ogni run e reimpostata solo dopo la rilettura (punto di commit); gate cumulativo della quarantena ≤ 0,001.
+- Durate osservate: incremental circa 20 minuti (06 ≈105 s, 07 ≈236–259 s, 08 ≈418–421 s, 13 ≈404–413 s); full circa 62 minuti (06 1892 s, 07 996 s, 08 423 s, 13 405 s).
+
+### Run validati
+
+| Run | Avvio (UTC) | Modalità | Esito | Righe osservazioni | Watermark | Gold `source_version` |
+|---|---|---|---|---|---|---|
+| 979191981800614 | 27/11 18:31 | incremental | SUCCESS | 99.645.529 | 1795804173 | 259 |
+| 793290515226958 | 27/11 21:31 | incremental | SUCCESS | 99.808.135 | 1795814941 | 261 |
+| 562684959567565 | 28/11 06:31 | full (automatico, dopo la pausa notturna) | SUCCESS | 99.863.753 | 1795847371 | 262 |
+| 363437381058558 | 28/11 09:31 | incremental | SUCCESS | 100.053.604 | 1795858177 | 263 |
+
+Controlli, ripetuti su ogni run: SUCCESS senza retry; modalità attesa; Silver ed Enriched allineati (time travel); 0 duplicati sulla chiave `feed_timestamp, entity_id, trip_id, stop_sequence, stop_id`; ledger `v1` con 34 righe in quarantena entro il gate; Gold PASS e coerente con Enriched. Nessuna anomalia concreta di durata o storage. La propagazione di `run_mode` è stata provata con il test isolato (run 1099108411391010) e in produzione.
+
+### Osservazioni non bloccanti
+
+- **Deletion vector:** crescono di circa uno per file nelle scritture incremental (alle 09:31: 94, 57 e 256 su trip_updates, observations ed enriched); da monitorare.
+- **OPTIMIZE esterni:** compaiono OPTIMIZE non lanciati dal Job né dall'operatore che azzerano i deletion vector; l'origine (probabile ottimizzazione automatica del workspace) non è verificata.
+- **Visibilità via CLI:** i task values del preflight (motivo e finestre) e l'output di 06 nelle run full non sono leggibili; la modalità full è dedotta dalla cronologia Delta (`CREATE OR REPLACE`).
+- La quota Free residua non è verificabile; nessuno SLA è dichiarato.
+
+### Persist GitHub (separato dallo scheduler)
+
+Il workflow `persist` del repository `rome-mobility-intelligence` è un tema distinto e **ancora aperto**: l'ultimo fallimento è un 503 `databricks_daily_quota_exhausted` (quota Free Databricks); un precedente 422 «Current scoring contract is invalid» non è diagnosticato. Nessuno dei due è attribuito allo scheduler ibrido né dichiarato risolto.

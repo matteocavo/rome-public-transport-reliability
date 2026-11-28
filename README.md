@@ -27,14 +27,14 @@ futura descrivono le fasi di implementazione registrate.
 
 ## Evidenze operative documentate
 
-**Stato runtime dopo attivazione del 26 ottobre 2026:** Job downstream `1084265487272426` **ACTIVE**, trigger periodico ogni **2 ore**, 06 → 07 → input scoring 08 → Gold operativo 13. Una run automatica e una run manuale equivalente verificate. Ultimo batch validato: feed **1793015012 / 2026-10-26T12:43:32+01:00**, Silver osservazioni v13, enrichment v13 (57,493,151 righe), scoring v9 (23,039 righe). Gold refresh **2026-10-26T12:43:28.368Z**, qualità PASSED e dashboard_ready YES. La quota Free residua non è verificabile; sostenibilità di lungo periodo e SLA non dimostrati. Ingestion 05 ogni 10 minuti invariata; prediction e metriche ML restano storiche. [Evidenze e limiti](docs/DOWNSTREAM_RUNTIME_ROLLOUT.md).
+**Stato runtime dopo attivazione del 26 ottobre 2026:** Job downstream `1084265487272426` **ACTIVE**, trigger periodico ogni **2 ore**, 06 → 07 → input scoring 08 → Gold operativo 13. Una run automatica e una run manuale equivalente verificate. Ultimo batch validato: feed **1793015012 / 2026-10-26T12:43:32+01:00**, Silver osservazioni v13, enrichment v13 (57,493,151 righe), scoring v9 (23,039 righe). Gold refresh **2026-10-26T12:43:28.368Z**, qualità PASSED e dashboard_ready YES. La quota Free residua non è verificabile; sostenibilità di lungo periodo e SLA non dimostrati. Ingestion 05 ogni 10 minuti invariata; prediction e metriche ML restano storiche. [Evidenze e limiti](docs/DOWNSTREAM_RUNTIME_ROLLOUT.md). **Aggiornamento 28 novembre 2026:** Job ora in modalità ibrida (3 ore, incremental/full automatico), validazione iniziale conclusa con GO, monitoraggio ordinario ([dettagli](docs/DOWNSTREAM_RUNTIME_ROLLOUT.md#modalità-ibrida-incrementalfull-2728-novembre-2026)).
 
 
 Un lakehouse Databricks per i feed del trasporto pubblico di Roma, con analisi storiche dell'affidabilità, ricerca predittiva e dashboard di Business Intelligence. Il nuovo target operativo separa i dati Databricks dal futuro runtime ML FastAPI/Python/scikit-learn.
 
 **Stack:** Databricks · Apache Spark / PySpark · Delta Lake · Unity Catalog · MLflow · Databricks SQL · Databricks AI/BI Dashboards · Python · SQL
 
-**Stato al 26 ottobre 2026:** ingestion attiva ogni 10 minuti; Job downstream ACTIVE ogni 2 ore, con validazioni e limiti descritti nel [report runtime](docs/DOWNSTREAM_RUNTIME_ROLLOUT.md). Una run automatica e una run manuale equivalente verificate. Il modello Spark resta storico e FastAPI/sklearn resta futuro.
+**Stato al 26 ottobre 2026:** ingestion attiva ogni 10 minuti; Job downstream ACTIVE (dal 28 novembre 2026 ogni 3 ore, modalità ibrida incremental/full), con validazioni e limiti descritti nel [report runtime](docs/DOWNSTREAM_RUNTIME_ROLLOUT.md). Una run automatica e una run manuale equivalente verificate. Il modello Spark resta storico e FastAPI/sklearn resta futuro.
 
 ## Anteprima Dashboard
 
@@ -353,11 +353,11 @@ Seguire la [roadmap operativa](docs/ROADMAP.md): monitoraggio del Job downstream
 
 ## Stato del progetto
 
-**Implementati e validati storicamente:** Bronze/Silver, associazione causale delle posizioni, Feature Engineering, etichettatura futura e filtro di qualità, esperimenti MLflow, selezione su validation, TEST congelato, replay batch, Gold, SQL e dashboard AI/BI. Ingestion pianificata operativa; il Job downstream operativo è ACTIVE ogni 2 ore, con i run verificati e i limiti di osservazione riportati sopra. PDF e quattro screenshot riallineati alla dashboard pubblicata del 26 ottobre, con ambiti operativo e modello storico distinti.
+**Implementati e validati storicamente:** Bronze/Silver, associazione causale delle posizioni, Feature Engineering, etichettatura futura e filtro di qualità, esperimenti MLflow, selezione su validation, TEST congelato, replay batch, Gold, SQL e dashboard AI/BI. Ingestion pianificata operativa; il Job downstream operativo è ACTIVE ogni 3 ore in modalità ibrida incremental/full (implementazione e validazione iniziale completate, monitoraggio ordinario), con i run verificati e i limiti di osservazione riportati sopra. PDF e quattro screenshot riallineati alla dashboard pubblicata del 26 ottobre, con ambiti operativo e modello storico distinti.
 
 **Percorso sostituito:** deployment Spark ML, conservato come implementazione storica/di riferimento; runtime operativo futuro FastAPI/sklearn.
 
-**Da completare:** monitoraggio della sostenibilità e della freshness del Job downstream attivo, backend operativo e presentazione app; mantenimento degli export allineati ai successivi rilasci della dashboard. Non si dichiara un'API live, un modello operativo già distribuito o adozione cittadina.
+**Da completare:** monitoraggio ordinario del Job downstream (sostenibilità Free, freshness, deletion vector); il workflow Persist GitHub resta un tema aperto separato; backend operativo e presentazione app; mantenimento degli export allineati ai successivi rilasci della dashboard. Non si dichiara un'API live, un modello operativo già distribuito o adozione cittadina.
 
 ## License and Data Attribution
 
